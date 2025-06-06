@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Fixed, No Boundary Restriction)</title>
+  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Fixed v2, No Boundary Restriction)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -57,7 +57,7 @@
   </style>
   <!-- TensorFlow.js and MoveNet 3D -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.4.0"></script>
 </head>
 <body>
   <div id="container">
@@ -651,7 +651,7 @@
         detector = await poseDetection.createDetector(
           poseDetection.SupportedModels.MoveNet,
           {
-            modelType: "SINGLEPOSE_THUNDER",
+            modelType: "SinglePose.Thunder",
             enableSmoothing: true,
             enable3D: true
           }
