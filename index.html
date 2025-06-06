@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget (Flight Time Official, No Boundary Restriction)</title>
+  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Flight Time Official, No Boundary Restriction)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -55,7 +55,7 @@
     #modeInstructions { font-size: 1rem; color: #7fffd4; margin: 8px 0 5px 0;}
     .official-label { color: #0ff; font-size: 1.05em; margin-left: 8px; font-weight: bold; }
   </style>
-  <!-- TensorFlow.js and MoveNet Lightning -->
+  <!-- TensorFlow.js and MoveNet 3D -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
 </head>
@@ -127,59 +127,6 @@
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
-    // --- HOMOGRAPHY UTILS ---
-    function computeHomography(src, dst) {
-      function adj(m) {
-        return [
-          m[4]*m[8]-m[5]*m[7], m[2]*m[7]-m[1]*m[8], m[1]*m[5]-m[2]*m[4],
-          m[5]*m[6]-m[3]*m[8], m[0]*m[8]-m[2]*m[6], m[2]*m[3]-m[0]*m[5],
-          m[3]*m[7]-m[4]*m[6], m[1]*m[6]-m[0]*m[7], m[0]*m[4]-m[1]*m[3]
-        ];
-      }
-      function multmm(a, b) {
-        let c = [];
-        for (let i = 0; i < 3; ++i)
-          for (let j = 0; j < 3; ++j) {
-            let cij = 0;
-            for (let k = 0; k < 3; ++k)
-              cij += a[3*i+k]*b[3*k+j];
-            c[3*i+j] = cij;
-          }
-        return c;
-      }
-      function multmv(m, v) {
-        return [
-          m[0]*v[0]+m[1]*v[1]+m[2]*v[2],
-          m[3]*v[0]+m[4]*v[1]+m[5]*v[2],
-          m[6]*v[0]+m[7]*v[1]+m[8]*v[2]
-        ];
-      }
-      function basisToPoints(p1, p2, p3, p4) {
-        let m = [
-          p1[0], p2[0], p3[0],
-          p1[1], p2[1], p3[1],
-          1,     1,     1
-        ];
-        let v = multmv(adj(m), [p4[0], p4[1], 1]);
-        return [
-          m[0]*v[0], m[1]*v[1], m[2]*v[2],
-          m[3]*v[0], m[4]*v[1], m[5]*v[2],
-          m[6]*v[0], m[7]*v[1], m[8]*v[2]
-        ];
-      }
-      let srcMat = basisToPoints(src[0], src[1], src[2], src[3]);
-      let dstMat = basisToPoints(dst[0], dst[1], dst[2], dst[3]);
-      return multmm(dstMat, adj(srcMat));
-    }
-    function applyHomography(H, pt) {
-      let x = pt[0], y = pt[1];
-      let denom = H[6]*x + H[7]*y + H[8];
-      return [
-        (H[0]*x + H[1]*y + H[2]) / denom,
-        (H[3]*x + H[4]*y + H[5]) / denom
-      ];
-    }
-
     // --- CAMERA/VIDEO/POSE/UTILS ---
     const JUMP_THRESHOLD_DEFAULT = 0.08;
     const GRAVITY = 9.81;
@@ -239,7 +186,7 @@
     // Mode-specific data
     let mode = "eurotramp";
     let planes = [];
-    let baselineY = null;
+    let baselineZ = null; // 3D Z baseline
     let calibrationClickPoints = [];
     let currentDrawPlane = 0;
 
@@ -255,7 +202,7 @@
       custom: "Tap the four corners of your jump area in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left."
     };
 
-    // Default dimensions
+    // Default dimensions for calibration UI (still needed for UI reference)
     const EUROTRAMP_LENGTH = 5.18, EUROTRAMP_WIDTH = 3.05;
     const DMINI_RAMP_LENGTH = 1.18, DMINI_RAMP_WIDTH = 1.1;
     const DMINI_FLAT_LENGTH = 1.62, DMINI_FLAT_WIDTH = 1.1;
@@ -324,7 +271,7 @@
     function startCalibration() {
       calibrationPhase = "mark_corners";
       calibrationClickPoints = [];
-      baselineY = null;
+      baselineZ = null;
       planes = [];
       currentDrawPlane = 0;
       widgetJumpHeightDisplay.style.display = "none";
@@ -383,20 +330,23 @@
       } catch (e) { jtError("calibration", "Unhandled error in canvas click handler", e); }
     });
     restartDrawBtn.addEventListener('click', startCalibration);
-    calibrateBtn.addEventListener('click', markBaselineY);
+    calibrateBtn.addEventListener('click', markBaselineZ);
 
-    function getAnkles(keypoints) {
-      const left = keypoints[15];
-      const right = keypoints[16];
+    // 3D ankle keypoint helpers for MoveNet 3D
+    function getAnkles3D(keypoints3d) {
+      // MoveNet 3D uses COCO order: left ankle = 15, right ankle = 16
+      const left = keypoints3d[15];
+      const right = keypoints3d[16];
       return {
         left: left && left.score > 0.5 ? left : null,
         right: right && right.score > 0.5 ? right : null
       };
     }
-    function getLowestAnkle(keypoints) {
-      const {left, right} = getAnkles(keypoints);
+    function getLowestAnkle3D(keypoints3d) {
+      const {left, right} = getAnkles3D(keypoints3d);
       if (left && right) {
-        return (left.y > right.y) ? left : right;
+        // Use the lower Z (closer to ground) as baseline, but for jump height, the higher Z (higher off ground)
+        return (left.z > right.z) ? left : right;
       } else if (left) {
         return left;
       } else if (right) {
@@ -405,44 +355,29 @@
       return null;
     }
 
-    function getPlaneForAnkle(x, y) {
-      if (mode === "doublemini" && planes.length === 2) {
-        // Simple: pick based on y coordinate (ramp is first, flat is second)
-        // For calibration, order matters: ramp (front), flat (rear)
-        // We'll use which imageQuad y-range the ankle is closer to.
-        let rampY = (planes[0].imageQuad[2][1] + planes[0].imageQuad[3][1]) / 2;
-        let flatY = (planes[1].imageQuad[2][1] + planes[1].imageQuad[3][1]) / 2;
-        return Math.abs(y - rampY) < Math.abs(y - flatY) ? planes[0] : planes[1];
-      }
-      return planes[0];
-    }
-
     // --- MAIN JUMP CALCULATION LOGIC ---
-    function computeAndSendJump(keypoints) {
+    function computeAndSendJump3D(keypoints3d) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
-      if (calibrationPhase !== 'complete' || baselineY === null || !planes.length) {
+      if (calibrationPhase !== 'complete' || baselineZ === null) {
         sendJumpHeight(0, false);
         return;
       }
-      const ankle = getLowestAnkle(keypoints);
+      const ankle = getLowestAnkle3D(keypoints3d);
       if (!ankle) {
         sendJumpHeight(0, false, 'no_ankles');
         return;
       }
-      const plane = getPlaneForAnkle(ankle.x, ankle.y);
-      if (!plane.homography) {
-        sendJumpHeight(0, false, 'no_homography');
-        return;
-      }
-      const projected = applyHomography(plane.homography, [ankle.x, ankle.y]);
-      const currentY = projected[1];
+      // MoveNet 3D z is negative "in front" of camera, positive "behind" camera; we want vertical axis in meters.
+      // In MoveNet 3D, z is the "relative depth" in meters from the camera, y is vertical.
+      // For vertical jump, use y, not z.
+      const currentY = ankle.y; // y is height in meters in MoveNet 3D
 
       yHistory.push(currentY);
       if (yHistory.length > 6) yHistory.shift();
       let smoothedY = yHistory.reduce((a,b) => a+b, 0)/yHistory.length;
 
-      // Live jump height for feedback
-      liveJumpHeight = baselineY - smoothedY;
+      // Live jump height for feedback (relative to calibration)
+      liveJumpHeight = smoothedY - baselineZ; // higher y = higher off ground
 
       // Jump state machine for flight time
       switch(jumpState) {
@@ -510,8 +445,8 @@
       }, '*');
     }
 
-    function markBaselineY() {
-      if (!lastDetections || !planes.length || !planes[0].homography) {
+    function markBaselineZ() {
+      if (!lastDetections || !lastDetections.keypoints3D) {
         trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
         trampolineNotice.style.color = "#f00";
         return;
@@ -522,18 +457,16 @@
       trampolineNotice.style.color = "#ff0";
       function sampleLoop() {
         if (sampleCount >= 15) {
-          baselineY = samples.sort((a,b)=>a-b)[Math.floor(samples.length/2)];
+          baselineZ = samples.sort((a,b)=>a-b)[Math.floor(samples.length/2)];
           calibrationPhase = "complete";
           widgetJumpHeightDisplay.style.display = "block";
           trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
           return;
         }
-        if (lastDetections && planes.length && planes[0].homography) {
-          let ankle = getLowestAnkle(lastDetections);
+        if (lastDetections && lastDetections.keypoints3D) {
+          let ankle = getLowestAnkle3D(lastDetections.keypoints3D);
           if (ankle) {
-            let plane = getPlaneForAnkle(ankle.x, ankle.y);
-            let projected = applyHomography(plane.homography, [ankle.x, ankle.y]);
-            samples.push(projected[1]);
+            samples.push(ankle.y); // y is vertical position in meters
           }
         }
         sampleCount++;
@@ -608,13 +541,13 @@
         calibrateBtn.style.display = "none";
       } else {
         calibrateBtn.style.display = "block";
-        calibrateBtn.disabled = !lastDetections;
+        calibrateBtn.disabled = !lastDetections || !lastDetections.keypoints3D;
       }
       if (calibrationPhase === "mark_corners") {
         trampolineNotice.textContent = modeInstructionsText[mode] || "";
         trampolineNotice.style.color = '#0f0';
       } else if (calibrationPhase === "stand_still") {
-        if (!lastDetections) {
+        if (!lastDetections || !lastDetections.keypoints3D) {
           trampolineNotice.textContent = "Area set. Stand still in the marked area, then press Calibrate.";
           trampolineNotice.style.color = '#ff0';
         } else {
@@ -635,10 +568,10 @@
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height);
       }
-      if (lastDetections) {
+      if (lastDetections && lastDetections.keypoints) {
         ctx.save();
         ctx.fillStyle = "#ff0";
-        for (const kp of lastDetections) {
+        for (const kp of lastDetections.keypoints) {
           if (kp.score > 0.5) {
             const cx = kp.x * (canvas.width / video.videoWidth);
             const cy = kp.y * (canvas.height / video.videoHeight);
@@ -648,13 +581,14 @@
           }
         }
         ctx.fillStyle = "#f00";
-        const {left, right} = getAnkles(lastDetections);
-        if (left) {
+        const left = lastDetections.keypoints[15];
+        const right = lastDetections.keypoints[16];
+        if (left && left.score > 0.5) {
           const cx = left.x * (canvas.width / video.videoWidth);
           const cy = left.y * (canvas.height / video.videoHeight);
           ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 2*Math.PI); ctx.fill();
         }
-        if (right) {
+        if (right && right.score > 0.5) {
           const cx = right.x * (canvas.width / video.videoWidth);
           const cy = right.y * (canvas.height / video.videoHeight);
           ctx.beginPath(); ctx.arc(cx, cy, 10, 0, 2*Math.PI); ctx.fill();
@@ -714,11 +648,15 @@
       }
     }
 
-    async function setupMoveNet() {
+    async function setupMoveNet3D() {
       loadingIndicator.style.display = 'block';
       detector = await poseDetection.createDetector(
         poseDetection.SupportedModels.MoveNet,
-        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+        {
+          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER, // Thunder model for 3D
+          enableSmoothing: true,
+          enable3D: true,
+        }
       );
       loadingIndicator.style.display = 'none';
     }
@@ -731,9 +669,13 @@
         let fps = 1000/(now-lastFrameTime);
         lastFrameTime = now;
         if (video.readyState === 4) {
-          let poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: useFrontCamera});
-          if (poses && poses[0] && poses[0].keypoints) {
-            lastDetections = poses[0].keypoints;
+          let poses = await detector.estimatePoses(video, {
+            maxPoses: 1,
+            flipHorizontal: useFrontCamera,
+            enable3D: true
+          });
+          if (poses && poses[0] && poses[0].keypoints3D) {
+            lastDetections = poses[0];
             frameRateDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
           }
         }
@@ -745,9 +687,10 @@
     setInterval(() => {
       if (
         lastDetections &&
+        lastDetections.keypoints3D &&
         calibrationPhase === "complete"
       ) {
-        computeAndSendJump(lastDetections);
+        computeAndSendJump3D(lastDetections.keypoints3D);
       }
     }, 33);
 
@@ -823,35 +766,16 @@
       try {
         loadSettingsFromStorage();
         await startCamera();
-        await setupMoveNet();
+        await setupMoveNet3D();
         drawLoop();
         poseLoop();
         startCalibration();
       } catch (e) {
-        trampolineNotice.textContent = "Failed to initialize MoveNet. Ensure your browser supports TensorFlow.js.";
+        trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Ensure your browser supports TensorFlow.js and MoveNet 3D model.";
         trampolineNotice.style.color = "#f00";
-        jtError("movenet", "Initialization error", e);
+        jtError("movenet3d", "Initialization error", e);
       }
     });
-
-    // --- Compute homographies after corners are set ---
-    const setHomographies = () => {
-      if (mode === "eurotramp" || mode === "custom") {
-        if (planes.length === 1 && planes[0].imageQuad && planes[0].worldQuad) {
-          planes[0].homography = computeHomography(planes[0].imageQuad, planes[0].worldQuad);
-        }
-      } else if (mode === "doublemini") {
-        if (planes.length === 2 && planes[0].imageQuad && planes[1].imageQuad) {
-          planes[0].homography = computeHomography(planes[0].imageQuad, planes[0].worldQuad);
-          planes[1].homography = computeHomography(planes[1].imageQuad, planes[1].worldQuad);
-        }
-      }
-    };
-    const origUpdateCalibrationUI = updateCalibrationUI;
-    updateCalibrationUI = function() {
-      origUpdateCalibrationUI();
-      if (calibrationPhase === "stand_still") setHomographies();
-    };
   </script>
 </body>
 </html>
