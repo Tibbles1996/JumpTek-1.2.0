@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Fixed v2, No Boundary Restriction)</title>
+  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Synchronized PoseLoop, Full Fix)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -147,6 +147,7 @@
     let detector = null;
     let lastDetections = null;
     let poseLoopActive = false;
+    let poseLoopStarted = false;
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -583,6 +584,14 @@
       updateRestartDrawBtnVisibility();
       requestAnimationFrame(drawLoop);
     }
+
+    function tryStartPoseLoop() {
+      if (detector && video.readyState === 4 && !poseLoopStarted) {
+        poseLoopStarted = true;
+        poseLoop();
+      }
+    }
+
     async function startCamera() {
       loadingIndicator.style.display = 'block';
       if (currentStream) {
@@ -602,6 +611,7 @@
         video.onloadedmetadata = () => {
           resizeCanvasToScreen();
           drawLoop();
+          tryStartPoseLoop();
         };
         await video.play();
         loadingIndicator.style.display = 'none';
@@ -631,7 +641,7 @@
           }
         );
         loadingIndicator.style.display = 'none';
-        console.log("MoveNet 3D detector initialized.");
+        tryStartPoseLoop();
       } catch (e) {
         loadingIndicator.style.display = 'none';
         trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Check browser compatibility and library versions.";
@@ -757,7 +767,6 @@
         await startCamera();
         await waitForPoseDetection();
         await setupMoveNet3D();
-        poseLoop();
         startCalibration();
       } catch (e) {
         trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Ensure your browser supports TensorFlow.js and MoveNet 3D model.";
