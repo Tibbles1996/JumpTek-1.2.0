@@ -55,9 +55,9 @@
     #modeInstructions { font-size: 1rem; color: #7fffd4; margin: 8px 0 5px 0;}
     .official-label { color: #0ff; font-size: 1.05em; margin-left: 8px; font-weight: bold; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
-  <!-- FIX: Use the latest nightly that supports MoveNet 3D -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.5.0-nightly.7/dist/pose-detection.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.18.0/dist/tf-backend-webgl.min.js"></script>
 </head>
 <body>
   <div id="container">
@@ -127,7 +127,9 @@
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
-    // JS CODE PART 1/3
+    // Force WebGL backend for best performance
+    tf.setBackend('webgl').then(() => tf.ready());
+
     function waitForPoseDetection() {
       return new Promise((resolve) => {
         function check() {
@@ -630,26 +632,26 @@
         throw err;
       }
     }
-       async function setupMoveNet3D() {
-  loadingIndicator.style.display = 'block';
-  try {
-    detector = await window.poseDetection.createDetector(
-      window.poseDetection.SupportedModels.MoveNet,
-      {
-        modelType: "MultiPose:Lightning",
-        enableSmoothing: true,
-        enable3D: true
+    async function setupMoveNet3D() {
+      loadingIndicator.style.display = 'block';
+      try {
+        detector = await window.poseDetection.createDetector(
+          window.poseDetection.SupportedModels.MoveNet,
+          {
+            modelType: "MultiPose:Lightning",
+            enableSmoothing: true,
+            enable3D: true
+          }
+        );
+        loadingIndicator.style.display = 'none';
+        tryStartPoseLoop();
+      } catch (e) {
+        loadingIndicator.style.display = 'none';
+        trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Check browser compatibility and library versions.";
+        trampolineNotice.style.color = "#f00";
+        jtError("movenet3d", "Initialization error", e);
       }
-    );
-    loadingIndicator.style.display = 'none';
-    tryStartPoseLoop();
-  } catch (e) {
-    loadingIndicator.style.display = 'none';
-    trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Check browser compatibility and library versions.";
-    trampolineNotice.style.color = "#f00";
-    jtError("movenet3d", "Initialization error", e);
-  }
-}
+    }
     async function poseLoop() {
       poseLoopActive = true;
       let lastFrameTime = performance.now();
@@ -768,6 +770,7 @@
         loadSettingsFromStorage();
         await startCamera();
         await waitForPoseDetection();
+        await tf.ready();
         await setupMoveNet3D();
         startCalibration();
       } catch (e) {
