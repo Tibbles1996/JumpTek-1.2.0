@@ -630,26 +630,26 @@
         throw err;
       }
     }
-        async function setupMoveNet3D() {
-      loadingIndicator.style.display = 'block';
-      try {
-        detector = await window.poseDetection.createDetector(
-          window.poseDetection.SupportedModels.MoveNet,
-          {
-            modelType: "SinglePose.Lightning",
-            enableSmoothing: true,
-            enable3D: true
-          }
-        );
-        loadingIndicator.style.display = 'none';
-        tryStartPoseLoop();
-      } catch (e) {
-        loadingIndicator.style.display = 'none';
-        trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Check browser compatibility and library versions.";
-        trampolineNotice.style.color = "#f00";
-        jtError("movenet3d", "Initialization error", e);
+       async function setupMoveNet3D() {
+  loadingIndicator.style.display = 'block';
+  try {
+    detector = await window.poseDetection.createDetector(
+      window.poseDetection.SupportedModels.MoveNet,
+      {
+        modelType: "MultiPose:Lightning",
+        enableSmoothing: true,
+        enable3D: true
       }
-    }
+    );
+    loadingIndicator.style.display = 'none';
+    tryStartPoseLoop();
+  } catch (e) {
+    loadingIndicator.style.display = 'none';
+    trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Check browser compatibility and library versions.";
+    trampolineNotice.style.color = "#f00";
+    jtError("movenet3d", "Initialization error", e);
+  }
+}
     async function poseLoop() {
       poseLoopActive = true;
       let lastFrameTime = performance.now();
