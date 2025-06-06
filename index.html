@@ -2,9 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek MoveNet AI Tracker Widget</title>
+  <title>JumpTek MoveNet Homography Widget</title>
   <style>
-    /* --- Use your original CSS for UI --- */
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
     #container { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
@@ -45,7 +44,7 @@
     #saveSettingsBtn { margin-top: 12px; padding: 10px 18px; border-radius: 12px; background: #27ae60; color: #fff; font-size: 1rem; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s; align-self: flex-end;}
     #saveSettingsBtn:active, #saveSettingsBtn:focus { background: #219150; }
     #calibrateBtn:disabled { background: #888 !important; cursor: not-allowed; }
-    #widgetJumpHeightDisplay { display: block; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
+    #widgetJumpHeightDisplay { display: none; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
     #rawHeightDebugDisplay, #debugValuesDisplay, #frameRateDisplay { position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 8px 15px; border-radius: 12px; font-size: 0.9rem; z-index: 20; pointer-events: none; text-align: left; display: none;}
     #rawHeightDebugDisplay.positive { color: #0f0; }
     #debugValuesDisplay { top: 120px; max-width: 300px; white-space: pre-line; }
@@ -54,7 +53,6 @@
   <!-- TensorFlow.js and MoveNet Lightning -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection/dist/movenet.min.js"></script>
 </head>
 <body>
   <div id="container">
@@ -73,16 +71,6 @@
     </div>
     <div id="settingsPopover">
       <button class="close-btn" id="closeSettingsBtn" aria-label="Close settings">&times;</button>
-      <div>
-        <label for="cameraDistance">Camera distance from trampoline center (meters):</label><br>
-        <input type="number" step="0.01" min="0.1" max="20" value="2.0" id="cameraDistance">
-        <div class="desc">Measure horizontally from the camera lens to the center of the trampoline.</div>
-      </div>
-      <div>
-        <label for="cameraHeight">Camera height above trampoline surface (meters):</label><br>
-        <input type="number" step="0.01" min="0" max="10" value="1.0" id="cameraHeight">
-        <div class="desc">Measure vertically from the trampoline mat to the center of the camera lens.</div>
-      </div>
       <div>
         <label for="jumpThreshold">Minimum Jump Threshold (meters):</label><br>
         <input type="number" step="0.01" min="0.01" max="0.5" value="0.08" id="jumpThreshold">
@@ -107,26 +95,77 @@
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
-    // ===================================
-    // MOVE NET + TFJS BASED JUMP TRACKER
-    // ===================================
-    // ---- CONSTANTS ----
-    const JUMP_THRESHOLD_DEFAULT = 0.08; // meters
-    const GRAVITY = 9.81; // m/s², for flight time estimation
+    // =========================
+    // HOMOGRAPHY UTILS
+    // =========================
+    // MIT License, adapted from https://github.com/Opteo/js-homography
+    function computeHomography(src, dst) {
+      function adj(m) {
+        return [
+          m[4]*m[8]-m[5]*m[7], m[2]*m[7]-m[1]*m[8], m[1]*m[5]-m[2]*m[4],
+          m[5]*m[6]-m[3]*m[8], m[0]*m[8]-m[2]*m[6], m[2]*m[3]-m[0]*m[5],
+          m[3]*m[7]-m[4]*m[6], m[1]*m[6]-m[0]*m[7], m[0]*m[4]-m[1]*m[3]
+        ];
+      }
+      function multmm(a, b) {
+        let c = [];
+        for (let i = 0; i < 3; ++i)
+          for (let j = 0; j < 3; ++j) {
+            let cij = 0;
+            for (let k = 0; k < 3; ++k)
+              cij += a[3*i+k]*b[3*k+j];
+            c[3*i+j] = cij;
+          }
+        return c;
+      }
+      function multmv(m, v) {
+        return [
+          m[0]*v[0]+m[1]*v[1]+m[2]*v[2],
+          m[3]*v[0]+m[4]*v[1]+m[5]*v[2],
+          m[6]*v[0]+m[7]*v[1]+m[8]*v[2]
+        ];
+      }
+      function basisToPoints(p1, p2, p3, p4) {
+        let m = [
+          p1[0], p2[0], p3[0],
+          p1[1], p2[1], p3[1],
+          1,     1,     1
+        ];
+        let v = multmv(adj(m), [p4[0], p4[1], 1]);
+        return [
+          m[0]*v[0], m[1]*v[1], m[2]*v[2],
+          m[3]*v[0], m[4]*v[1], m[5]*v[2],
+          m[6]*v[0], m[7]*v[1], m[8]*v[2]
+        ];
+      }
+      let srcMat = basisToPoints(src[0], src[1], src[2], src[3]);
+      let dstMat = basisToPoints(dst[0], dst[1], dst[2], dst[3]);
+      return multmm(dstMat, adj(srcMat));
+    }
+    function applyHomography(H, pt) {
+      let x = pt[0], y = pt[1];
+      let denom = H[6]*x + H[7]*y + H[8];
+      return [
+        (H[0]*x + H[1]*y + H[2]) / denom,
+        (H[3]*x + H[4]*y + H[5]) / denom
+      ];
+    }
 
-    // ---- CAMERA/VIDEO ----
+    // =========================
+    // CAMERA/VIDEO/POSE/UTILS
+    // =========================
+    const JUMP_THRESHOLD_DEFAULT = 0.08; // meters
+    const GRAVITY = 9.81; // m/s²
+
     let useFrontCamera = false;
     let currentStream = null;
     let videoTrack = null;
     let zoomCapabilities = null;
-
-    // ---- POSE DETECTION ----
     let detector = null;
     let lastDetections = null;
     let poseLoopActive = false;
     let lastInferenceTime = 0;
 
-    // ---- UI ELEMENTS ----
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -145,35 +184,33 @@
     const settingsPopover = document.getElementById('settingsPopover');
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
-    const cameraDistanceInput = document.getElementById('cameraDistance');
-    const cameraHeightInput = document.getElementById('cameraHeight');
     const jumpThresholdInput = document.getElementById('jumpThreshold');
 
-    // ---- CALIBRATION ----
+    // Calibration by homography
     let trampolineCorners = [];
     let trampolinePolygon = null;
-    let trampolineCenter = null;
-    let baselineY = null; // Baseline ankle Y
-    let calibrationPhase = 'mark_corners'; // 'mark_corners', 'stand_still', 'complete'
+    let baselineY = null; // baseline real-world Y (meters)
+    let calibrationPhase = 'mark_corners';
+    let homography = null;
+    const TRAMPOLINE_WIDTH = 5.18; // meters (17 ft)
+    const TRAMPOLINE_HEIGHT = 3.05; // meters (10 ft)
+    // Real-world mapping order: [TL, TR, BR, BL]
+    const realWorldCorners = [
+      [0, 0],
+      [TRAMPOLINE_WIDTH, 0],
+      [TRAMPOLINE_WIDTH, TRAMPOLINE_HEIGHT],
+      [0, TRAMPOLINE_HEIGHT]
+    ];
 
-    // ---- JUMP DETECTION ----
+    // Jump detection
     let jumpState = 'on_ground';
     let jumpStartTime = 0;
     let jumpEndTime = 0;
-    let highestPointY = null;
-    let jumpStartY = null;
-    let jumpHighestY = null;
-    let lastReportedJumpHeight = 0;
-    let lastLeftAnkleY = null;
-    let lastRightAnkleY = null;
     let yHistory = [];
     let jumpHeightHistory = [];
-
-    // ---- SETTINGS ----
-    let debugMode = false;
     let JUMP_THRESHOLD = JUMP_THRESHOLD_DEFAULT;
+    let debugMode = false;
 
-    // ---- UTILS ----
     function jtError(area, message, errObj) {
       try {
         let msg = `[JTERROR][${area}] ${message}`;
@@ -186,13 +223,11 @@
       }
     }
 
-    // ---- VIDEO/CANVAS SIZING ----
     function resizeCanvasToScreen() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     }
 
-    // ---- CAMERA CONTROL ----
     async function startCamera() {
       loadingIndicator.style.display = 'block';
       if (currentStream) {
@@ -227,7 +262,6 @@
       }
     }
 
-    // ---- MOVE NET POSE DETECTOR ----
     async function setupMoveNet() {
       loadingIndicator.style.display = 'block';
       detector = await poseDetection.createDetector(
@@ -237,7 +271,7 @@
       loadingIndicator.style.display = 'none';
     }
 
-    // ---- GET ANKLE KEYPOINTS (MoveNet: 15=left ankle, 16=right ankle) ----
+    // MoveNet: 15=left ankle, 16=right ankle
     function getAnkles(keypoints) {
       const left = keypoints[15];
       const right = keypoints[16];
@@ -247,19 +281,18 @@
       };
     }
 
-    function getLowestAnkleY(keypoints) {
+    function getLowestAnkle(keypoints) {
       const {left, right} = getAnkles(keypoints);
       if (left && right) {
-        return Math.max(left.y, right.y); // lower in image is larger y
+        return (left.y > right.y) ? left : right;
       } else if (left) {
-        return left.y;
+        return left;
       } else if (right) {
-        return right.y;
+        return right;
       }
       return null;
     }
 
-    // ---- MAIN POSE LOOP ----
     async function poseLoop() {
       poseLoopActive = true;
       let lastFrameTime = performance.now();
@@ -271,7 +304,6 @@
           let poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: useFrontCamera});
           if (poses && poses[0] && poses[0].keypoints) {
             lastDetections = poses[0].keypoints;
-            // For FPS display
             frameRateDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
           }
         }
@@ -280,51 +312,35 @@
       poseLoopActive = false;
     }
 
-    // ---- JUMP HEIGHT ESTIMATION ----
-    // We estimate jump height by vertical ankle movement, mapped to meters by calibration (or by using flight time)
     function computeAndSendJump(keypoints) {
-      // Update threshold from settings
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
-
-      if (calibrationPhase !== 'complete' || baselineY === null) {
+      if (calibrationPhase !== 'complete' || baselineY === null || !homography) {
         sendJumpHeight(0, false);
         return;
       }
-      const {left, right} = getAnkles(keypoints);
-      if (!left && !right) {
+      const ankle = getLowestAnkle(keypoints);
+      if (!ankle) {
         sendJumpHeight(0, false, 'no_ankles');
         return;
       }
-      // Get lowest ankle y (screen coordinates)
-      let currentY = getLowestAnkleY(keypoints);
+      // Project ankle position to real-world trampoline coordinates
+      const projected = applyHomography(homography, [ankle.x, ankle.y]);
+      const currentY = projected[1]; // in meters, Y is vertical on trampoline plane
 
       // Smooth Y using average of history
       yHistory.push(currentY);
       if (yHistory.length > 6) yHistory.shift();
       let smoothedY = yHistory.reduce((a,b) => a+b, 0)/yHistory.length;
 
-      // Height in pixels (baselineY - currentY), positive when jumping
-      let pixelDelta = baselineY - smoothedY;
-      // Calibrate: estimate real-life meters per pixel
-      // Estimate using cameraHeight and cameraDistance for rough scaling
-      // Assume standing ankle height occupies 40% of video height (tuneable)
-      let cameraHeight = parseFloat(cameraHeightInput.value) || 1.0;
-      let pixelsStanding = baselineY; // assuming standing ankle y = baselineY
-      let metersPerPixel = cameraHeight / (pixelsStanding || 1); // fallback avoid 0-div
-
-      let estimatedJumpHeight = pixelDelta * metersPerPixel;
-
-      // Optionally, use flight time for a secondary estimate (not primary)
-      // (Not implemented: could use jumpState transitions and GRAVITY)
+      // Height in meters (baselineY - smoothedY), positive when jumping
+      let jumpHeight = baselineY - smoothedY;
 
       // State machine
       switch(jumpState) {
         case 'on_ground':
-          if (estimatedJumpHeight > JUMP_THRESHOLD) {
+          if (jumpHeight > JUMP_THRESHOLD) {
             jumpState = 'ascending';
             jumpStartTime = performance.now();
-            highestPointY = smoothedY;
-            jumpStartY = smoothedY;
             widgetJumpHeightDisplay.textContent = `Jump: 0.00 m`;
             sendJumpHeight(0, true, 'takeoff');
           } else {
@@ -333,36 +349,30 @@
           }
           break;
         case 'ascending':
-          if (smoothedY < highestPointY) {
-            highestPointY = smoothedY;
-            jumpHighestY = smoothedY;
-          }
-          if (estimatedJumpHeight < JUMP_THRESHOLD/2) {
+          if (jumpHeight < JUMP_THRESHOLD/2) {
             // Landed
             jumpState = 'on_ground';
             jumpEndTime = performance.now();
             let flightTime = (jumpEndTime - jumpStartTime) / 1000;
-            // Flight time jump height (optional)
             let flightJumpHeight = (GRAVITY * Math.pow(flightTime, 2)) / 8;
-            // Weighted average
-            let finalJump = 0.7*estimatedJumpHeight + 0.3*flightJumpHeight;
+            let finalJump = 0.7*jumpHeight + 0.3*flightJumpHeight;
             finalJump = finalJump > 0 ? finalJump : 0;
             widgetJumpHeightDisplay.textContent = `Jump: ${finalJump.toFixed(2)} m`;
             sendJumpHeight(finalJump, true, 'landed');
             jumpHeightHistory.push(finalJump);
             if (debugMode) {
-              debugValuesDisplay.textContent = `Pixel: ${estimatedJumpHeight.toFixed(2)}m\nFlight: ${flightJumpHeight.toFixed(2)}m\nFinal: ${finalJump.toFixed(2)}m\nTime: ${flightTime.toFixed(3)}s`;
+              debugValuesDisplay.textContent = `Homography: ${jumpHeight.toFixed(2)}m\nFlight: ${flightJumpHeight.toFixed(2)}m\nFinal: ${finalJump.toFixed(2)}m\nTime: ${flightTime.toFixed(3)}s`;
             }
           } else {
-            widgetJumpHeightDisplay.textContent = `Jump: ${estimatedJumpHeight.toFixed(2)} m`;
-            sendJumpHeight(estimatedJumpHeight, true, 'ascending');
+            widgetJumpHeightDisplay.textContent = `Jump: ${jumpHeight.toFixed(2)} m`;
+            sendJumpHeight(jumpHeight, true, 'ascending');
           }
           break;
       }
 
       // Debug info
       if (debugMode) {
-        rawHeightDebugDisplay.textContent = `Raw Jump Height: ${estimatedJumpHeight.toFixed(3)}m (${jumpState})`;
+        rawHeightDebugDisplay.textContent = `Jump Height: ${jumpHeight.toFixed(3)}m (${jumpState})`;
         rawHeightDebugDisplay.style.display = "block";
         debugValuesDisplay.style.display = "block";
       } else {
@@ -383,7 +393,6 @@
       }, '*');
     }
 
-    // ---- DRAW LOOP ----
     function drawLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
@@ -435,12 +444,22 @@
         ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
         for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
         ctx.closePath(); ctx.stroke(); ctx.restore();
+        // Draw corner dots
+        ctx.save(); ctx.fillStyle = "#0ff";
+        for (let i = 0; i < points.length; i++) {
+          ctx.beginPath();
+          ctx.arc(points[i][0], points[i][1], 10, 0, 2*Math.PI);
+          ctx.fill();
+          ctx.font = "bold 18px Arial";
+          ctx.fillStyle = "#fff";
+          ctx.fillText(["TL","TR","BR","BL"][i], points[i][0]+10, points[i][1]-10);
+        }
+        ctx.restore();
       } catch (e) {
         jtError("ui", "Failed to draw trampoline area", e);
       }
     }
 
-    // ---- CALIBRATION ----
     function updateCalibrationUI() {
       if (calibrationPhase === "mark_corners" || calibrationPhase === "complete") {
         calibrateBtn.style.display = "none";
@@ -449,7 +468,7 @@
         calibrateBtn.disabled = !lastDetections;
       }
       if (calibrationPhase === "mark_corners") {
-        trampolineNotice.textContent = "Tap the four corners of the trampoline to mark its boundaries.";
+        trampolineNotice.textContent = "Tap the four corners of the trampoline in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.";
         trampolineNotice.style.color = '#0f0';
       } else if (calibrationPhase === "stand_still") {
         if (!lastDetections) {
@@ -461,7 +480,7 @@
         }
       } else if (calibrationPhase === "complete") {
         trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
-        trampolineNotice.style.color = '#0f0';
+        trampolineNotice.style.color = "#0f0";
       }
     }
     function updateRestartDrawBtnVisibility() {
@@ -469,13 +488,12 @@
     }
 
     function markBaselineY() {
-      // The user should stand still on trampoline, and we take ankle Y as baseline
-      if (!lastDetections) {
-        trampolineNotice.textContent = "No pose detected. Please ensure your body is fully visible and try again.";
+      // User should stand still on trampoline, and we take ankle Y as baseline in real-world meters
+      if (!lastDetections || !homography) {
+        trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
         trampolineNotice.style.color = "#f00";
         return;
       }
-      // Take median of last 15 ankles
       let samples = [];
       let sampleCount = 0;
       trampolineNotice.textContent = "Calibrating... Stand still for 2 seconds.";
@@ -488,9 +506,12 @@
           trampolineNotice.style.color = "#0f0";
           return;
         }
-        if (lastDetections) {
-          let ankleY = getLowestAnkleY(lastDetections);
-          if (ankleY) samples.push(ankleY);
+        if (lastDetections && homography) {
+          let ankle = getLowestAnkle(lastDetections);
+          if (ankle) {
+            let projected = applyHomography(homography, [ankle.x, ankle.y]);
+            samples.push(projected[1]);
+          }
         }
         sampleCount++;
         setTimeout(sampleLoop, 130);
@@ -498,7 +519,6 @@
       sampleLoop();
     }
 
-    // ---- SETTINGS ----
     function applyDebugMode() {
       debugMode = debugModeCheckbox.checked;
       debugValuesDisplay.style.display = debugMode ? "block" : "none";
@@ -506,14 +526,10 @@
       frameRateDisplay.style.display = debugMode ? "block" : "none";
     }
     function saveSettingsToStorage() {
-      localStorage.setItem("jt_cameraDistance", cameraDistanceInput.value);
-      localStorage.setItem("jt_cameraHeight", cameraHeightInput.value);
       localStorage.setItem("jt_jumpThreshold", jumpThresholdInput.value);
       localStorage.setItem("jt_debugMode", debugModeCheckbox.checked ? "1" : "0");
     }
     function loadSettingsFromStorage() {
-      if (localStorage.getItem("jt_cameraDistance")) cameraDistanceInput.value = localStorage.getItem("jt_cameraDistance");
-      if (localStorage.getItem("jt_cameraHeight")) cameraHeightInput.value = localStorage.getItem("jt_cameraHeight");
       if (localStorage.getItem("jt_jumpThreshold")) {
         jumpThresholdInput.value = localStorage.getItem("jt_jumpThreshold");
         JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
@@ -522,7 +538,6 @@
       applyDebugMode();
     }
 
-    // ---- EVENTS ----
     canvas.addEventListener('click', function(e) {
       try {
         if (calibrationPhase !== "mark_corners") return;
@@ -533,10 +548,8 @@
         trampolineCorners.push([x, y]);
         if (trampolineCorners.length === 4) {
           trampolinePolygon = trampolineCorners.slice();
-          trampolineCenter = [
-            trampolinePolygon.reduce((sum, pt) => sum + pt[0], 0)/4,
-            trampolinePolygon.reduce((sum, pt) => sum + pt[1], 0)/4
-          ];
+          // Compute homography
+          homography = computeHomography(trampolinePolygon, realWorldCorners);
           trampolineCorners = [];
           calibrationPhase = "stand_still";
           updateCalibrationUI();
@@ -546,6 +559,7 @@
     restartDrawBtn.addEventListener('click', () => {
       trampolineCorners = [];
       trampolinePolygon = null;
+      homography = null;
       trampolineNotice.textContent = "Corner selection reset. Tap the four corners of the trampoline.";
       calibrationPhase = "mark_corners";
       updateCalibrationUI();
@@ -572,7 +586,7 @@
       applyDebugMode();
       settingsPopover.classList.remove('open');
       settingsPopover.style.display = 'none';
-      trampolineNotice.textContent = "Settings saved! If camera position changed, restart calibration.";
+      trampolineNotice.textContent = "Settings saved!";
     });
 
     switchCameraBtn.addEventListener('click', async () => {
@@ -580,7 +594,7 @@
       await startCamera();
       trampolineCorners = [];
       trampolinePolygon = null;
-      trampolineCenter = null;
+      homography = null;
       calibrationPhase = "mark_corners";
       baselineY = null;
       jumpState = 'on_ground';
@@ -592,7 +606,7 @@
     const resetCalibrationForZoom = () => {
       trampolineCorners = [];
       trampolinePolygon = null;
-      trampolineCenter = null;
+      homography = null;
       calibrationPhase = "mark_corners";
       baselineY = null;
       jumpState = 'on_ground';
@@ -620,7 +634,6 @@
       resetCalibrationForZoom();
     });
 
-    // ---- JUMP DETECTION TIMER ----
     setInterval(() => {
       if (
         lastDetections &&
@@ -628,14 +641,12 @@
       ) {
         computeAndSendJump(lastDetections);
       }
-    }, 33); // ~30 FPS
+    }, 33);
 
-    // ---- RESIZE ----
     window.addEventListener('resize', () => {
       resizeCanvasToScreen();
     });
 
-    // ---- INIT ----
     window.addEventListener('DOMContentLoaded', async () => {
       try {
         loadSettingsFromStorage();
