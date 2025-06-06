@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek MoveNet Homography Widget</title>
+  <title>JumpTek Multi-Mode Jump Widget</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -31,7 +31,7 @@
     #restartDrawBtn:hover { background: #b53224; }
     #loadingIndicator { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 30; color: #ff0; background: rgba(0,0,0,0.7); padding: 7px 16px; border-radius: 12px; font-size: 1.1rem; display: none; pointer-events: none;}
     #trampolineNotice { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); color: #0f0; background: rgba(0,0,0,0.7); padding: 10px 24px; border-radius: 16px; font-size: 1.2rem; width: auto; max-width: 90vw; text-align: center; pointer-events: none; z-index: 30;}
-    #settingsPopover { display: none; position: absolute; top: 60px; left: 50%; transform: translateX(-50%); min-width: 320px; background: rgba(34,34,34,0.98); border-radius: 16px; box-shadow: 0 6px 30px rgba(0,0,0,0.35), 0 1.5px 3px #222; padding: 24px 28px 18px 28px; z-index: 100; color: #fff; flex-direction: column; gap: 12px;}
+    #settingsPopover { display: none; position: absolute; top: 60px; left: 50%; transform: translateX(-50%); min-width: 340px; background: rgba(34,34,34,0.98); border-radius: 16px; box-shadow: 0 6px 30px rgba(0,0,0,0.35), 0 1.5px 3px #222; padding: 24px 28px 18px 28px; z-index: 100; color: #fff; flex-direction: column; gap: 12px;}
     #settingsPopover.open { display: flex; animation: popIn 0.18s; }
     @keyframes popIn { from { opacity: 0; transform: translateX(-50%) scale(0.97); } to   { opacity: 1; transform: translateX(-50%) scale(1); } }
     #settingsPopover label { font-size: 1rem; margin-bottom: 2px; }
@@ -44,11 +44,15 @@
     #saveSettingsBtn { margin-top: 12px; padding: 10px 18px; border-radius: 12px; background: #27ae60; color: #fff; font-size: 1rem; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s; align-self: flex-end;}
     #saveSettingsBtn:active, #saveSettingsBtn:focus { background: #219150; }
     #calibrateBtn:disabled { background: #888 !important; cursor: not-allowed; }
-    #widgetJumpHeightDisplay { display: block; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
+    #widgetJumpHeightDisplay { display: none; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
     #rawHeightDebugDisplay, #debugValuesDisplay, #frameRateDisplay { position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 8px 15px; border-radius: 12px; font-size: 0.9rem; z-index: 20; pointer-events: none; text-align: left; display: none;}
     #rawHeightDebugDisplay.positive { color: #0f0; }
     #debugValuesDisplay { top: 120px; max-width: 300px; white-space: pre-line; }
     #frameRateDisplay { top: 80px; }
+    #settingsPopover select { padding: 7px; width: 180px; font-size: 1rem; border-radius: 6px; border: 1px solid #888; background: #222; color: #fff; margin-bottom: 8px; }
+    #customDims, #dminiDims { margin-bottom: 10px; }
+    #customDims input, #dminiDims input { width: 90px; margin-right: 10px;}
+    #modeInstructions { font-size: 1rem; color: #7fffd4; margin: 8px 0 5px 0;}
   </style>
   <!-- TensorFlow.js and MoveNet Lightning -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
@@ -71,6 +75,33 @@
     </div>
     <div id="settingsPopover">
       <button class="close-btn" id="closeSettingsBtn" aria-label="Close settings">&times;</button>
+      <div>
+        <label for="trampolineMode">Trampoline Mode:</label>
+        <select id="trampolineMode">
+          <option value="eurotramp">EuroTramp (5.18m x 3.05m)</option>
+          <option value="doublemini">Double Mini (Ramp + Flat)</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <div id="dminiDims" style="display:none;">
+        <label><b>Double Mini Dimensions</b></label><br>
+        <label>Ramp Length (m): <input id="dminiRampLen" type="number" step="0.01" value="1.18"></label>
+        <label>Ramp Width (m): <input id="dminiRampWid" type="number" step="0.01" value="1.1"></label><br>
+        <label>Flat Length (m): <input id="dminiFlatLen" type="number" step="0.01" value="1.62"></label>
+        <label>Flat Width (m): <input id="dminiFlatWid" type="number" step="0.01" value="1.1"></label>
+      </div>
+      <div id="customDims" style="display:none;">
+        <label><b>Custom Jump Area</b></label>
+        <div>
+          <label>Length: <input id="customLength" type="number" step="0.01" value="1.04"></label>
+          <select id="customLengthUnit"><option value="m">meters</option><option value="in">inches</option><option value="ft">feet</option></select>
+        </div>
+        <div>
+          <label>Width: <input id="customWidth" type="number" step="0.01" value="0.61"></label>
+          <select id="customWidthUnit"><option value="m">meters</option><option value="in">inches</option><option value="ft">feet</option></select>
+        </div>
+      </div>
+      <div id="modeInstructions"></div>
       <div>
         <label for="jumpThreshold">Minimum Jump Threshold (meters):</label><br>
         <input type="number" step="0.01" min="0.01" max="0.5" value="0.08" id="jumpThreshold">
@@ -98,7 +129,6 @@
     // =========================
     // HOMOGRAPHY UTILS
     // =========================
-    // MIT License, adapted from https://github.com/Opteo/js-homography
     function computeHomography(src, dst) {
       function adj(m) {
         return [
@@ -150,6 +180,17 @@
         (H[3]*x + H[4]*y + H[5]) / denom
       ];
     }
+    function pointInQuad(px, py, quad) {
+      // quad: [ [x0,y0], [x1,y1], [x2,y2], [x3,y3] ]
+      function sign(p1, p2, p3) {
+        return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1]);
+      }
+      const b1 = sign([px,py], quad[0], quad[1]) < 0.0;
+      const b2 = sign([px,py], quad[1], quad[2]) < 0.0;
+      const b3 = sign([px,py], quad[2], quad[3]) < 0.0;
+      const b4 = sign([px,py], quad[3], quad[0]) < 0.0;
+      return ((b1 === b2) && (b2 === b3) && (b3 === b4));
+    }
 
     // =========================
     // CAMERA/VIDEO/POSE/UTILS
@@ -164,7 +205,6 @@
     let detector = null;
     let lastDetections = null;
     let poseLoopActive = false;
-    let lastInferenceTime = 0;
 
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
@@ -185,24 +225,23 @@
     const closeSettingsBtn = document.getElementById('closeSettingsBtn');
     const saveSettingsBtn = document.getElementById('saveSettingsBtn');
     const jumpThresholdInput = document.getElementById('jumpThreshold');
+    const trampolineModeSelect = document.getElementById('trampolineMode');
+    const modeInstructions = document.getElementById('modeInstructions');
+    // Double Mini
+    const dminiDims = document.getElementById('dminiDims');
+    const dminiRampLen = document.getElementById('dminiRampLen');
+    const dminiRampWid = document.getElementById('dminiRampWid');
+    const dminiFlatLen = document.getElementById('dminiFlatLen');
+    const dminiFlatWid = document.getElementById('dminiFlatWid');
+    // Custom
+    const customDims = document.getElementById('customDims');
+    const customLength = document.getElementById('customLength');
+    const customWidth = document.getElementById('customWidth');
+    const customLengthUnit = document.getElementById('customLengthUnit');
+    const customWidthUnit = document.getElementById('customWidthUnit');
 
-    // Calibration by homography
-    let trampolineCorners = [];
-    let trampolinePolygon = null;
-    let baselineY = null; // baseline real-world Y (meters)
+    // Calibration
     let calibrationPhase = 'mark_corners';
-    let homography = null;
-    const TRAMPOLINE_WIDTH = 5.18; // meters (17 ft)
-    const TRAMPOLINE_HEIGHT = 3.05; // meters (10 ft)
-    // Real-world mapping order: [TL, TR, BR, BL]
-    const realWorldCorners = [
-      [0, 0],
-      [TRAMPOLINE_WIDTH, 0],
-      [TRAMPOLINE_WIDTH, TRAMPOLINE_HEIGHT],
-      [0, TRAMPOLINE_HEIGHT]
-    ];
-
-    // Jump detection
     let jumpState = 'on_ground';
     let jumpStartTime = 0;
     let jumpEndTime = 0;
@@ -210,6 +249,37 @@
     let jumpHeightHistory = [];
     let JUMP_THRESHOLD = JUMP_THRESHOLD_DEFAULT;
     let debugMode = false;
+
+    // Mode-specific data
+    let mode = "eurotramp";
+    // Plane(s) - each plane gets: { imageQuad, worldQuad, homography }
+    let planes = [];
+    // For EuroTramp and Custom, only one plane.
+    // For Double Mini: planes[0] is ramp, planes[1] is flat.
+    // To know which is which: planes[0].type === "ramp" or "flat"
+    let baselineY = null;
+    let calibrationClickPoints = [];
+    let currentDrawPlane = 0;
+
+    // Plane definitions for UI reference
+    const modeInstructionsText = {
+      eurotramp: "Tap the four corners of the trampoline in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.",
+      doublemini: "Tap the four corners of the RAMP (Front-Left, Front-Right, Crease-Right, Crease-Left), then the four corners of the FLAT (Crease-Left, Crease-Right, Rear-Right, Rear-Left). The crease is the transition between ramp and flat.",
+      custom: "Tap the four corners of your jump area in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left."
+    };
+
+    // Default dimensions
+    const EUROTRAMP_LENGTH = 5.18, EUROTRAMP_WIDTH = 3.05;
+    const DMINI_RAMP_LENGTH = 1.18, DMINI_RAMP_WIDTH = 1.1;
+    const DMINI_FLAT_LENGTH = 1.62, DMINI_FLAT_WIDTH = 1.1;
+
+    function getCustomMeters(val, unit) {
+      val = parseFloat(val);
+      if (unit === "m") return val;
+      if (unit === "ft") return val * 0.3048;
+      if (unit === "in") return val * 0.0254;
+      return val;
+    }
 
     function jtError(area, message, errObj) {
       try {
@@ -228,50 +298,111 @@
       canvas.height = window.innerHeight;
     }
 
-    async function startCamera() {
-      loadingIndicator.style.display = 'block';
-      if (currentStream) {
-        try { currentStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    function updateModeInstructions() {
+      modeInstructions.textContent = modeInstructionsText[mode] || "";
+    }
+
+    // UI: show/hide dimension inputs based on mode
+    function updateSettingsVisibility() {
+      dminiDims.style.display = (mode === "doublemini") ? "block" : "none";
+      customDims.style.display = (mode === "custom") ? "block" : "none";
+      updateModeInstructions();
+    }
+
+    // Retrieve world quads for all planes in current mode
+    function getPlanesWorldQuads() {
+      if (mode === "eurotramp") {
+        return [[
+          [0, 0],
+          [EUROTRAMP_LENGTH, 0],
+          [EUROTRAMP_LENGTH, EUROTRAMP_WIDTH],
+          [0, EUROTRAMP_WIDTH]
+        ]];
+      } else if (mode === "doublemini") {
+        let rampLen = parseFloat(dminiRampLen.value) || DMINI_RAMP_LENGTH;
+        let rampWid = parseFloat(dminiRampWid.value) || DMINI_RAMP_WIDTH;
+        let flatLen = parseFloat(dminiFlatLen.value) || DMINI_FLAT_LENGTH;
+        let flatWid = parseFloat(dminiFlatWid.value) || DMINI_FLAT_WIDTH;
+        // Ramp: (0,0) (rampLen,0) (rampLen,rampWid) (0,rampWid)
+        // Flat: (0,0) (flatLen,0) (flatLen,flatWid) (0,flatWid)
+        return [
+          [ [0,0], [rampLen,0], [rampLen,rampWid], [0,rampWid] ], // ramp
+          [ [0,0], [flatLen,0], [flatLen,flatWid], [0,flatWid] ] // flat
+        ];
+      } else if (mode === "custom") {
+        let len = getCustomMeters(customLength.value, customLengthUnit.value);
+        let wid = getCustomMeters(customWidth.value, customWidthUnit.value);
+        return [[
+          [0,0],[len,0],[len,wid],[0,wid]
+        ]];
       }
+    }
+
+    function startCalibration() {
+      calibrationPhase = "mark_corners";
+      calibrationClickPoints = [];
+      baselineY = null;
+      planes = [];
+      currentDrawPlane = 0;
+      widgetJumpHeightDisplay.style.display = "none";
+      trampolineNotice.textContent = modeInstructionsText[mode] || "";
+      updateCalibrationUI();
+    }
+
+    // Mark points: on click, store for current plane, when enough are marked, move to next plane or to stand-still phase
+    canvas.addEventListener('click', function(e) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: useFrontCamera ? 'user' : 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
+        if (calibrationPhase !== "mark_corners") return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (video.videoWidth / rect.width);
+        const y = (e.clientY - rect.top) * (video.videoHeight / rect.height);
+        calibrationClickPoints.push([x, y]);
+        let enough = false, thisWorldQuad = null;
+        if (mode === "eurotramp" || mode === "custom") {
+          if (calibrationClickPoints.length === 4) enough = true;
+        } else if (mode === "doublemini") {
+          if (currentDrawPlane === 0 && calibrationClickPoints.length === 4) enough = true;
+          if (currentDrawPlane === 1 && calibrationClickPoints.length === 8) enough = true;
+        }
+        if (enough) {
+          let allWorldQuads = getPlanesWorldQuads();
+          if (mode === "eurotramp" || mode === "custom") {
+            planes = [{
+              type: mode,
+              imageQuad: calibrationClickPoints.slice(0,4),
+              worldQuad: allWorldQuads[0]
+            }];
+            calibrationPhase = "stand_still";
+            trampolineNotice.textContent = "Area set! Stand still in the marked area and press Calibrate.";
+          } else if (mode === "doublemini") {
+            if (currentDrawPlane === 0) {
+              // Store ramp
+              planes.push({
+                type: "ramp",
+                imageQuad: calibrationClickPoints.slice(0,4),
+                worldQuad: allWorldQuads[0]
+              });
+              currentDrawPlane++;
+              trampolineNotice.textContent = "Ramp set! Now tap the four corners of the FLAT area (Crease-Left, Crease-Right, Rear-Right, Rear-Left).";
+            } else if (currentDrawPlane === 1) {
+              // Store flat
+              planes.push({
+                type: "flat",
+                imageQuad: calibrationClickPoints.slice(4,8),
+                worldQuad: allWorldQuads[1]
+              });
+              calibrationPhase = "stand_still";
+              trampolineNotice.textContent = "Both planes set! Stand still in your takeoff area and press Calibrate.";
+            }
           }
-        });
-        currentStream = stream;
-        video.srcObject = stream;
-        await video.play();
-        loadingIndicator.style.display = 'none';
-        videoTrack = stream.getVideoTracks()[0];
-        zoomCapabilities = videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().zoom;
-        zoomInBtn.disabled = !zoomCapabilities;
-        zoomOutBtn.disabled = !zoomCapabilities;
-        resizeCanvasToScreen();
-      } catch (err) {
-        loadingIndicator.style.display = 'none';
-        trampolineNotice.textContent = 'Unable to access camera. Please check your device settings and permissions, and make sure you are using HTTPS.';
-        trampolineNotice.style.color = '#f00';
-        zoomInBtn.disabled = true;
-        zoomOutBtn.disabled = true;
-        jtError("camera", "Unable to access camera", err);
-        throw err;
-      }
-    }
+        }
+        updateCalibrationUI();
+      } catch (e) { jtError("calibration", "Unhandled error in canvas click handler", e); }
+    });
+    restartDrawBtn.addEventListener('click', startCalibration);
+    calibrateBtn.addEventListener('click', markBaselineY);
 
-    async function setupMoveNet() {
-      loadingIndicator.style.display = 'block';
-      detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
-      );
-      loadingIndicator.style.display = 'none';
-    }
-
-    // MoveNet: 15=left ankle, 16=right ankle
+    // Keypoint logic
     function getAnkles(keypoints) {
       const left = keypoints[15];
       const right = keypoints[16];
@@ -280,7 +411,6 @@
         right: right && right.score > 0.5 ? right : null
       };
     }
-
     function getLowestAnkle(keypoints) {
       const {left, right} = getAnkles(keypoints);
       if (left && right) {
@@ -293,28 +423,23 @@
       return null;
     }
 
-    async function poseLoop() {
-      poseLoopActive = true;
-      let lastFrameTime = performance.now();
-      while (detector) {
-        const now = performance.now();
-        let fps = 1000/(now-lastFrameTime);
-        lastFrameTime = now;
-        if (video.readyState === 4) {
-          let poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: useFrontCamera});
-          if (poses && poses[0] && poses[0].keypoints) {
-            lastDetections = poses[0].keypoints;
-            frameRateDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
-          }
-        }
-        await new Promise(r => setTimeout(r, 15));
+    // Translator function for double mini: determine which plane to use based on foot location
+    function getPlaneForAnkle(x, y) {
+      // For double mini, ramp is planes[0], flat is planes[1]
+      if (mode === "doublemini" && planes.length === 2) {
+        // If in ramp quad, use ramp; else use flat.
+        if (pointInQuad(x, y, planes[0].imageQuad)) return planes[0];
+        if (pointInQuad(x, y, planes[1].imageQuad)) return planes[1];
+        // If not in either, return closest by Y coordinate (default to ramp)
+        return (y < (planes[0].imageQuad[2][1] + planes[0].imageQuad[3][1]) / 2) ? planes[0] : planes[1];
       }
-      poseLoopActive = false;
+      // For other modes, only one plane
+      return planes[0];
     }
 
     function computeAndSendJump(keypoints) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
-      if (calibrationPhase !== 'complete' || baselineY === null || !homography) {
+      if (calibrationPhase !== 'complete' || baselineY === null || !planes.length) {
         sendJumpHeight(0, false);
         return;
       }
@@ -323,8 +448,14 @@
         sendJumpHeight(0, false, 'no_ankles');
         return;
       }
+      // Pick plane and homography for this ankle
+      const plane = getPlaneForAnkle(ankle.x, ankle.y);
+      if (!plane.homography) {
+        sendJumpHeight(0, false, 'no_homography');
+        return;
+      }
       // Project ankle position to real-world trampoline coordinates
-      const projected = applyHomography(homography, [ankle.x, ankle.y]);
+      const projected = applyHomography(plane.homography, [ankle.x, ankle.y]);
       const currentY = projected[1]; // in meters, Y is vertical on trampoline plane
 
       // Smooth Y using average of history
@@ -393,6 +524,130 @@
       }, '*');
     }
 
+    // Mark baselineY using current pose and selected plane
+    function markBaselineY() {
+      if (!lastDetections || !planes.length || !planes[0].homography) {
+        trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
+        trampolineNotice.style.color = "#f00";
+        return;
+      }
+      let samples = [];
+      let sampleCount = 0;
+      trampolineNotice.textContent = "Calibrating... Stand still for 2 seconds.";
+      trampolineNotice.style.color = "#ff0";
+      function sampleLoop() {
+        if (sampleCount >= 15) {
+          baselineY = samples.sort((a,b)=>a-b)[Math.floor(samples.length/2)];
+          calibrationPhase = "complete";
+          widgetJumpHeightDisplay.style.display = "block";
+          trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
+          return;
+        }
+        if (lastDetections && planes.length && planes[0].homography) {
+          let ankle = getLowestAnkle(lastDetections);
+          if (ankle) {
+            let plane = getPlaneForAnkle(ankle.x, ankle.y);
+            let projected = applyHomography(plane.homography, [ankle.x, ankle.y]);
+            samples.push(projected[1]);
+          }
+        }
+        sampleCount++;
+        setTimeout(sampleLoop, 130);
+      }
+      sampleLoop();
+    }
+
+    function applyDebugMode() {
+      debugMode = debugModeCheckbox.checked;
+      debugValuesDisplay.style.display = debugMode ? "block" : "none";
+      rawHeightDebugDisplay.style.display = debugMode ? "block" : "none";
+      frameRateDisplay.style.display = debugMode ? "block" : "none";
+    }
+    function saveSettingsToStorage() {
+      localStorage.setItem("jt_jumpThreshold", jumpThresholdInput.value);
+      localStorage.setItem("jt_debugMode", debugModeCheckbox.checked ? "1" : "0");
+      localStorage.setItem("jt_mode", trampolineModeSelect.value);
+      localStorage.setItem("jt_customLen", customLength.value);
+      localStorage.setItem("jt_customLenU", customLengthUnit.value);
+      localStorage.setItem("jt_customWid", customWidth.value);
+      localStorage.setItem("jt_customWidU", customWidthUnit.value);
+      localStorage.setItem("jt_dminiRampLen", dminiRampLen.value);
+      localStorage.setItem("jt_dminiRampWid", dminiRampWid.value);
+      localStorage.setItem("jt_dminiFlatLen", dminiFlatLen.value);
+      localStorage.setItem("jt_dminiFlatWid", dminiFlatWid.value);
+    }
+    function loadSettingsFromStorage() {
+      if (localStorage.getItem("jt_jumpThreshold")) {
+        jumpThresholdInput.value = localStorage.getItem("jt_jumpThreshold");
+        JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
+      }
+      debugModeCheckbox.checked = localStorage.getItem("jt_debugMode") === "1";
+      trampolineModeSelect.value = localStorage.getItem("jt_mode") || "eurotramp";
+      mode = trampolineModeSelect.value;
+      customLength.value = localStorage.getItem("jt_customLen") || "1.04";
+      customLengthUnit.value = localStorage.getItem("jt_customLenU") || "m";
+      customWidth.value = localStorage.getItem("jt_customWid") || "0.61";
+      customWidthUnit.value = localStorage.getItem("jt_customWidU") || "m";
+      dminiRampLen.value = localStorage.getItem("jt_dminiRampLen") || DMINI_RAMP_LENGTH;
+      dminiRampWid.value = localStorage.getItem("jt_dminiRampWid") || DMINI_RAMP_WIDTH;
+      dminiFlatLen.value = localStorage.getItem("jt_dminiFlatLen") || DMINI_FLAT_LENGTH;
+      dminiFlatWid.value = localStorage.getItem("jt_dminiFlatWid") || DMINI_FLAT_WIDTH;
+      updateSettingsVisibility();
+      applyDebugMode();
+    }
+
+    // Draw UI
+    function drawTrampolineArea(ctx, points, color = '#00f') {
+      try {
+        if (!Array.isArray(points) || points.length < 1) return;
+        ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+        ctx.closePath(); ctx.stroke(); ctx.restore();
+        // Draw corner dots
+        ctx.save(); ctx.fillStyle = "#0ff";
+        for (let i = 0; i < points.length; i++) {
+          ctx.beginPath();
+          ctx.arc(points[i][0], points[i][1], 10, 0, 2*Math.PI);
+          ctx.fill();
+          ctx.font = "bold 18px Arial";
+          ctx.fillStyle = "#fff";
+          ctx.fillText(`P${i+1}`, points[i][0]+10, points[i][1]-10);
+        }
+        ctx.restore();
+      } catch (e) {
+        jtError("ui", "Failed to draw trampoline area", e);
+      }
+    }
+
+    function updateCalibrationUI() {
+      if (calibrationPhase === "mark_corners" || calibrationPhase === "complete") {
+        calibrateBtn.style.display = "none";
+      } else {
+        calibrateBtn.style.display = "block";
+        calibrateBtn.disabled = !lastDetections;
+      }
+      if (calibrationPhase === "mark_corners") {
+        trampolineNotice.textContent = modeInstructionsText[mode] || "";
+        trampolineNotice.style.color = '#0f0';
+      } else if (calibrationPhase === "stand_still") {
+        if (!lastDetections) {
+          trampolineNotice.textContent = "Area set. Stand still in the marked area, then press Calibrate.";
+          trampolineNotice.style.color = '#ff0';
+        } else {
+          trampolineNotice.textContent = "Area set! Stand still and press Calibrate.";
+          trampolineNotice.style.color = '#0f0';
+        }
+      } else if (calibrationPhase === "complete") {
+        trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
+        trampolineNotice.style.color = "#0f0";
+      }
+    }
+    function updateRestartDrawBtnVisibility() {
+      restartDrawBtn.style.display = (calibrationPhase === "mark_corners") ? "block" : "none";
+    }
+
+    // Main draw loop
     function drawLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
@@ -426,146 +681,100 @@
         }
         ctx.restore();
       }
-      // Draw trampoline area
-      if (trampolineCorners.length > 0 && !trampolinePolygon)
-        drawTrampolineArea(ctx, trampolineCorners.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]));
-      if (trampolinePolygon)
-        drawTrampolineArea(ctx, trampolinePolygon.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]));
+      // Draw trampoline areas
+      if (calibrationPhase === "mark_corners") {
+        let q1 = calibrationClickPoints.slice(0,4);
+        let q2 = calibrationClickPoints.slice(4,8);
+        if (mode === "doublemini") {
+          if (q1.length) drawTrampolineArea(ctx, q1.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]), "#00f");
+          if (q2.length) drawTrampolineArea(ctx, q2.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]), "#0c9");
+        } else {
+          if (q1.length) drawTrampolineArea(ctx, q1.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]), "#00f");
+        }
+      } else if (planes.length) {
+        planes.forEach((pl, idx) => {
+          drawTrampolineArea(ctx, pl.imageQuad.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]), idx === 0 ? "#00f" : "#0c9");
+        });
+      }
       // UI
       updateCalibrationUI();
       updateRestartDrawBtnVisibility();
       requestAnimationFrame(drawLoop);
     }
 
-    function drawTrampolineArea(ctx, points) {
+    async function startCamera() {
+      loadingIndicator.style.display = 'block';
+      if (currentStream) {
+        try { currentStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      }
       try {
-        if (!Array.isArray(points) || points.length < 1) return;
-        ctx.save(); ctx.strokeStyle = '#00f'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
-        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
-        ctx.closePath(); ctx.stroke(); ctx.restore();
-        // Draw corner dots
-        ctx.save(); ctx.fillStyle = "#0ff";
-        for (let i = 0; i < points.length; i++) {
-          ctx.beginPath();
-          ctx.arc(points[i][0], points[i][1], 10, 0, 2*Math.PI);
-          ctx.fill();
-          ctx.font = "bold 18px Arial";
-          ctx.fillStyle = "#fff";
-          ctx.fillText(["TL","TR","BR","BL"][i], points[i][0]+10, points[i][1]-10);
-        }
-        ctx.restore();
-      } catch (e) {
-        jtError("ui", "Failed to draw trampoline area", e);
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: useFrontCamera ? 'user' : 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play();
+        loadingIndicator.style.display = 'none';
+        videoTrack = stream.getVideoTracks()[0];
+        zoomCapabilities = videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().zoom;
+        zoomInBtn.disabled = !zoomCapabilities;
+        zoomOutBtn.disabled = !zoomCapabilities;
+        resizeCanvasToScreen();
+      } catch (err) {
+        loadingIndicator.style.display = 'none';
+        trampolineNotice.textContent = 'Unable to access camera. Please check your device settings and permissions, and make sure you are using HTTPS.';
+        trampolineNotice.style.color = '#f00';
+        zoomInBtn.disabled = true;
+        zoomOutBtn.disabled = true;
+        jtError("camera", "Unable to access camera", err);
+        throw err;
       }
     }
 
-    function updateCalibrationUI() {
-      if (calibrationPhase === "mark_corners" || calibrationPhase === "complete") {
-        calibrateBtn.style.display = "none";
-      } else {
-        calibrateBtn.style.display = "block";
-        calibrateBtn.disabled = !lastDetections;
-      }
-      if (calibrationPhase === "mark_corners") {
-        trampolineNotice.textContent = "Tap the four corners of the trampoline in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.";
-        trampolineNotice.style.color = '#0f0';
-      } else if (calibrationPhase === "stand_still") {
-        if (!lastDetections) {
-          trampolineNotice.textContent = "Trampoline area set. Stand on the trampoline and ensure your body is fully visible, then press Calibrate.";
-          trampolineNotice.style.color = '#ff0';
-        } else {
-          trampolineNotice.textContent = "Trampoline area set! Stand still on the trampoline and press Calibrate.";
-          trampolineNotice.style.color = '#0f0';
-        }
-      } else if (calibrationPhase === "complete") {
-        trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
-        trampolineNotice.style.color = "#0f0";
-      }
-    }
-    function updateRestartDrawBtnVisibility() {
-      restartDrawBtn.style.display = (calibrationPhase === "mark_corners") ? "block" : "none";
+    async function setupMoveNet() {
+      loadingIndicator.style.display = 'block';
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING }
+      );
+      loadingIndicator.style.display = 'none';
     }
 
-    function markBaselineY() {
-      // User should stand still on trampoline, and we take ankle Y as baseline in real-world meters
-      if (!lastDetections || !homography) {
-        trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
-        trampolineNotice.style.color = "#f00";
-        return;
-      }
-      let samples = [];
-      let sampleCount = 0;
-      trampolineNotice.textContent = "Calibrating... Stand still for 2 seconds.";
-      trampolineNotice.style.color = "#ff0";
-      function sampleLoop() {
-        if (sampleCount >= 15) {
-          baselineY = samples.sort((a,b)=>a-b)[Math.floor(samples.length/2)];
-          calibrationPhase = "complete";
-          trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
-          trampolineNotice.style.color = "#0f0";
-          return;
-        }
-        if (lastDetections && homography) {
-          let ankle = getLowestAnkle(lastDetections);
-          if (ankle) {
-            let projected = applyHomography(homography, [ankle.x, ankle.y]);
-            samples.push(projected[1]);
+    async function poseLoop() {
+      poseLoopActive = true;
+      let lastFrameTime = performance.now();
+      while (detector) {
+        const now = performance.now();
+        let fps = 1000/(now-lastFrameTime);
+        lastFrameTime = now;
+        if (video.readyState === 4) {
+          let poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: useFrontCamera});
+          if (poses && poses[0] && poses[0].keypoints) {
+            lastDetections = poses[0].keypoints;
+            frameRateDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
           }
         }
-        sampleCount++;
-        setTimeout(sampleLoop, 130);
+        await new Promise(r => setTimeout(r, 15));
       }
-      sampleLoop();
+      poseLoopActive = false;
     }
 
-    function applyDebugMode() {
-      debugMode = debugModeCheckbox.checked;
-      debugValuesDisplay.style.display = debugMode ? "block" : "none";
-      rawHeightDebugDisplay.style.display = debugMode ? "block" : "none";
-      frameRateDisplay.style.display = debugMode ? "block" : "none";
-    }
-    function saveSettingsToStorage() {
-      localStorage.setItem("jt_jumpThreshold", jumpThresholdInput.value);
-      localStorage.setItem("jt_debugMode", debugModeCheckbox.checked ? "1" : "0");
-    }
-    function loadSettingsFromStorage() {
-      if (localStorage.getItem("jt_jumpThreshold")) {
-        jumpThresholdInput.value = localStorage.getItem("jt_jumpThreshold");
-        JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
+    setInterval(() => {
+      // After calibration, keep jump loop going
+      if (
+        lastDetections &&
+        calibrationPhase === "complete"
+      ) {
+        computeAndSendJump(lastDetections);
       }
-      debugModeCheckbox.checked = localStorage.getItem("jt_debugMode") === "1";
-      applyDebugMode();
-    }
+    }, 33);
 
-    canvas.addEventListener('click', function(e) {
-      try {
-        if (calibrationPhase !== "mark_corners") return;
-        if (trampolinePolygon) return;
-        const rect = canvas.getBoundingClientRect();
-        const x = (e.clientX - rect.left) * (video.videoWidth / rect.width);
-        const y = (e.clientY - rect.top) * (video.videoHeight / rect.height);
-        trampolineCorners.push([x, y]);
-        if (trampolineCorners.length === 4) {
-          trampolinePolygon = trampolineCorners.slice();
-          // Compute homography
-          homography = computeHomography(trampolinePolygon, realWorldCorners);
-          trampolineCorners = [];
-          calibrationPhase = "stand_still";
-          updateCalibrationUI();
-        }
-      } catch (e) { jtError("calibration", "Unhandled error in canvas click handler", e); }
-    });
-    restartDrawBtn.addEventListener('click', () => {
-      trampolineCorners = [];
-      trampolinePolygon = null;
-      homography = null;
-      trampolineNotice.textContent = "Corner selection reset. Tap the four corners of the trampoline.";
-      calibrationPhase = "mark_corners";
-      updateCalibrationUI();
-    });
-    calibrateBtn.addEventListener('click', markBaselineY);
-
+    // Settings UI
     settingsBtn.addEventListener('click', e => {
       settingsPopover.classList.add('open');
       settingsPopover.style.display = 'flex';
@@ -587,33 +796,31 @@
       settingsPopover.classList.remove('open');
       settingsPopover.style.display = 'none';
       trampolineNotice.textContent = "Settings saved!";
+      // If user changed mode or area, re-calibrate
+      mode = trampolineModeSelect.value;
+      startCalibration();
+      updateSettingsVisibility();
     });
+
+    trampolineModeSelect.addEventListener('change', () => {
+      mode = trampolineModeSelect.value;
+      updateSettingsVisibility();
+      startCalibration();
+    });
+    [customLength, customLengthUnit, customWidth, customWidthUnit,
+      dminiRampLen, dminiRampWid, dminiFlatLen, dminiFlatWid
+    ].forEach(inp => inp.addEventListener('input', () => {
+      // Reset calibration if area changes
+      startCalibration();
+    }));
 
     switchCameraBtn.addEventListener('click', async () => {
       useFrontCamera = !useFrontCamera;
       await startCamera();
-      trampolineCorners = [];
-      trampolinePolygon = null;
-      homography = null;
-      calibrationPhase = "mark_corners";
-      baselineY = null;
-      jumpState = 'on_ground';
-      yHistory = [];
-      jumpHeightHistory = [];
-      trampolineNotice.textContent = "Camera switched! Mark trampoline corners.";
-      updateCalibrationUI();
+      startCalibration();
     });
     const resetCalibrationForZoom = () => {
-      trampolineCorners = [];
-      trampolinePolygon = null;
-      homography = null;
-      calibrationPhase = "mark_corners";
-      baselineY = null;
-      jumpState = 'on_ground';
-      yHistory = [];
-      jumpHeightHistory = [];
-      trampolineNotice.textContent = "Zoom changed! Mark trampoline corners again.";
-      updateCalibrationUI();
+      startCalibration();
     };
     zoomInBtn.addEventListener('click', async () => {
       if (!videoTrack || !zoomCapabilities) return;
@@ -634,19 +841,11 @@
       resetCalibrationForZoom();
     });
 
-    setInterval(() => {
-      if (
-        lastDetections &&
-        calibrationPhase === "complete"
-      ) {
-        computeAndSendJump(lastDetections);
-      }
-    }, 33);
-
     window.addEventListener('resize', () => {
       resizeCanvasToScreen();
     });
 
+    // On load
     window.addEventListener('DOMContentLoaded', async () => {
       try {
         loadSettingsFromStorage();
@@ -654,12 +853,35 @@
         await setupMoveNet();
         drawLoop();
         poseLoop();
+        startCalibration();
       } catch (e) {
         trampolineNotice.textContent = "Failed to initialize MoveNet. Ensure your browser supports TensorFlow.js.";
         trampolineNotice.style.color = "#f00";
         jtError("movenet", "Initialization error", e);
       }
     });
+
+    // --- Compute homographies after corners are set ---
+    // When going to 'stand_still', generate homographies!
+    const setHomographies = () => {
+      if (mode === "eurotramp" || mode === "custom") {
+        if (planes.length === 1 && planes[0].imageQuad && planes[0].worldQuad) {
+          planes[0].homography = computeHomography(planes[0].imageQuad, planes[0].worldQuad);
+        }
+      } else if (mode === "doublemini") {
+        if (planes.length === 2 && planes[0].imageQuad && planes[1].imageQuad) {
+          planes[0].homography = computeHomography(planes[0].imageQuad, planes[0].worldQuad);
+          planes[1].homography = computeHomography(planes[1].imageQuad, planes[1].worldQuad);
+        }
+      }
+    };
+    // Watch calibrationPhase for transition to 'stand_still'
+    const origUpdateCalibrationUI = updateCalibrationUI;
+    updateCalibrationUI = function() {
+      origUpdateCalibrationUI();
+      if (calibrationPhase === "stand_still") setHomographies();
+    };
+
   </script>
 </body>
 </html>
