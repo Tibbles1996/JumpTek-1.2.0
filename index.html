@@ -124,7 +124,7 @@
       <button id="zoomOutBtn">-</button>
     </div>
   </div>
-  <video id="video" autoplay playsinline style="display:none;"></video>
+  <video id="video" autoplay playsinline style="display:block;z-index:10;opacity:1;"></video>
   <script>
     function waitForPoseDetection() {
       return new Promise((resolve) => {
@@ -138,7 +138,6 @@
         check();
       });
     }
-    // --- CAMERA/VIDEO/POSE/UTILS ---
     const JUMP_THRESHOLD_DEFAULT = 0.08;
     const GRAVITY = 9.81;
     let useFrontCamera = false;
