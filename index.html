@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Flight Time Official, No Boundary Restriction)</title>
+  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Fixed, No Boundary Restriction)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -186,7 +186,7 @@
     // Mode-specific data
     let mode = "eurotramp";
     let planes = [];
-    let baselineZ = null; // 3D Z baseline
+    let baselineY = null; // 3D Y baseline (vertical, in meters)
     let calibrationClickPoints = [];
     let currentDrawPlane = 0;
 
@@ -271,7 +271,7 @@
     function startCalibration() {
       calibrationPhase = "mark_corners";
       calibrationClickPoints = [];
-      baselineZ = null;
+      baselineY = null;
       planes = [];
       currentDrawPlane = 0;
       widgetJumpHeightDisplay.style.display = "none";
@@ -330,7 +330,7 @@
       } catch (e) { jtError("calibration", "Unhandled error in canvas click handler", e); }
     });
     restartDrawBtn.addEventListener('click', startCalibration);
-    calibrateBtn.addEventListener('click', markBaselineZ);
+    calibrateBtn.addEventListener('click', markBaselineY);
 
     // 3D ankle keypoint helpers for MoveNet 3D
     function getAnkles3D(keypoints3d) {
@@ -342,11 +342,10 @@
         right: right && right.score > 0.5 ? right : null
       };
     }
-    function getLowestAnkle3D(keypoints3d) {
+    function getHighestAnkle3D(keypoints3d) {
       const {left, right} = getAnkles3D(keypoints3d);
       if (left && right) {
-        // Use the lower Z (closer to ground) as baseline, but for jump height, the higher Z (higher off ground)
-        return (left.z > right.z) ? left : right;
+        return (left.y > right.y) ? left : right;
       } else if (left) {
         return left;
       } else if (right) {
@@ -358,26 +357,24 @@
     // --- MAIN JUMP CALCULATION LOGIC ---
     function computeAndSendJump3D(keypoints3d) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
-      if (calibrationPhase !== 'complete' || baselineZ === null) {
+      if (calibrationPhase !== 'complete' || baselineY === null) {
         sendJumpHeight(0, false);
         return;
       }
-      const ankle = getLowestAnkle3D(keypoints3d);
+      const ankle = getHighestAnkle3D(keypoints3d);
       if (!ankle) {
         sendJumpHeight(0, false, 'no_ankles');
         return;
       }
-      // MoveNet 3D z is negative "in front" of camera, positive "behind" camera; we want vertical axis in meters.
-      // In MoveNet 3D, z is the "relative depth" in meters from the camera, y is vertical.
-      // For vertical jump, use y, not z.
-      const currentY = ankle.y; // y is height in meters in MoveNet 3D
+      // MoveNet 3D y is vertical in meters.
+      const currentY = ankle.y;
 
       yHistory.push(currentY);
       if (yHistory.length > 6) yHistory.shift();
       let smoothedY = yHistory.reduce((a,b) => a+b, 0)/yHistory.length;
 
       // Live jump height for feedback (relative to calibration)
-      liveJumpHeight = smoothedY - baselineZ; // higher y = higher off ground
+      liveJumpHeight = smoothedY - baselineY; // higher y = higher off ground
 
       // Jump state machine for flight time
       switch(jumpState) {
@@ -445,7 +442,7 @@
       }, '*');
     }
 
-    function markBaselineZ() {
+    function markBaselineY() {
       if (!lastDetections || !lastDetections.keypoints3D) {
         trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
         trampolineNotice.style.color = "#f00";
@@ -457,14 +454,14 @@
       trampolineNotice.style.color = "#ff0";
       function sampleLoop() {
         if (sampleCount >= 15) {
-          baselineZ = samples.sort((a,b)=>a-b)[Math.floor(samples.length/2)];
+          baselineY = samples.sort((a,b)=>a-b)[Math.floor(samples.length/2)];
           calibrationPhase = "complete";
           widgetJumpHeightDisplay.style.display = "block";
           trampolineNotice.textContent = "Calibration complete! Jump height tracking active.";
           return;
         }
         if (lastDetections && lastDetections.keypoints3D) {
-          let ankle = getLowestAnkle3D(lastDetections.keypoints3D);
+          let ankle = getHighestAnkle3D(lastDetections.keypoints3D);
           if (ankle) {
             samples.push(ankle.y); // y is vertical position in meters
           }
@@ -650,15 +647,23 @@
 
     async function setupMoveNet3D() {
       loadingIndicator.style.display = 'block';
-      detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        {
-          modelType: poseDetection.movenet.modelType.SINGLEPOSE_THUNDER, // Thunder model for 3D
-          enableSmoothing: true,
-          enable3D: true,
-        }
-      );
-      loadingIndicator.style.display = 'none';
+      try {
+        detector = await poseDetection.createDetector(
+          poseDetection.SupportedModels.MoveNet,
+          {
+            modelType: "SINGLEPOSE_THUNDER",
+            enableSmoothing: true,
+            enable3D: true
+          }
+        );
+        loadingIndicator.style.display = 'none';
+        console.log("MoveNet 3D detector initialized.");
+      } catch (e) {
+        loadingIndicator.style.display = 'none';
+        trampolineNotice.textContent = "Failed to initialize MoveNet 3D. Check browser compatibility and library versions.";
+        trampolineNotice.style.color = "#f00";
+        jtError("movenet3d", "Initialization error", e);
+      }
     }
 
     async function poseLoop() {
@@ -669,14 +674,32 @@
         let fps = 1000/(now-lastFrameTime);
         lastFrameTime = now;
         if (video.readyState === 4) {
-          let poses = await detector.estimatePoses(video, {
-            maxPoses: 1,
-            flipHorizontal: useFrontCamera,
-            enable3D: true
-          });
-          if (poses && poses[0] && poses[0].keypoints3D) {
+          try {
+            let poses = await detector.estimatePoses(video, {
+              maxPoses: 1,
+              flipHorizontal: useFrontCamera,
+              enable3D: true
+            });
+            // Logging for debugging
+            if (!poses || !poses[0]) {
+              console.error("No pose detected at all.");
+              trampolineNotice.textContent = "No pose detected. Please ensure you are visible on camera.";
+              trampolineNotice.style.color = "#f00";
+              continue;
+            }
+            if (!poses[0].keypoints3D || !poses[0].keypoints3D.length) {
+              console.error("MoveNet 3D failed to produce keypoints3D. Pose:", poses[0]);
+              trampolineNotice.textContent = "MoveNet 3D failed to produce 3D keypoints. Try refreshing or check your webcam.";
+              trampolineNotice.style.color = "#f00";
+              continue;
+            }
             lastDetections = poses[0];
             frameRateDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
+            trampolineNotice.style.color = "#0f0";
+          } catch (e) {
+            jtError("poseLoop", "Error in estimatePoses", e);
+            trampolineNotice.textContent = "MoveNet 3D error: " + String(e);
+            trampolineNotice.style.color = "#f00";
           }
         }
         await new Promise(r => setTimeout(r, 15));
