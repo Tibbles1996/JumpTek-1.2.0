@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D, Synchronized PoseLoop, Full Fix)</title>
+  <title>JumpTek Multi-Mode Jump Widget (MoveNet 3D Fixed)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -56,7 +56,8 @@
     .official-label { color: #0ff; font-size: 1.05em; margin-left: 8px; font-weight: bold; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.4.0"></script>
+  <!-- FIX: Use the latest nightly that supports MoveNet 3D -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.5.0-nightly.7/dist/pose-detection.js"></script>
 </head>
 <body>
   <div id="container">
@@ -126,6 +127,7 @@
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
+    // JS CODE PART 1/3
     function waitForPoseDetection() {
       return new Promise((resolve) => {
         function check() {
@@ -340,7 +342,7 @@
       }
       return null;
     }
-    function computeAndSendJump3D(keypoints3d) {
+        function computeAndSendJump3D(keypoints3d) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
       if (calibrationPhase !== 'complete' || baselineY === null) {
         sendJumpHeight(0, false);
@@ -591,7 +593,6 @@
         poseLoop();
       }
     }
-
     async function startCamera() {
       loadingIndicator.style.display = 'block';
       if (currentStream) {
@@ -629,7 +630,7 @@
         throw err;
       }
     }
-    async function setupMoveNet3D() {
+        async function setupMoveNet3D() {
       loadingIndicator.style.display = 'block';
       try {
         detector = await window.poseDetection.createDetector(
@@ -697,6 +698,7 @@
         computeAndSendJump3D(lastDetections.keypoints3D);
       }
     }, 33);
+
     settingsBtn.addEventListener('click', e => {
       settingsPopover.classList.add('open');
       settingsPopover.style.display = 'flex';
