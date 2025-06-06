@@ -7,7 +7,22 @@
 <body>
   <video id="video" autoplay playsinline></video>
   <script>
+    // Wait until the poseDetection library is loaded
+    function waitForPoseDetection() {
+      return new Promise((resolve) => {
+        function check() {
+          if (window.poseDetection && window.poseDetection.createDetector) {
+            resolve();
+          } else {
+            setTimeout(check, 20);
+          }
+        }
+        check();
+      });
+    }
+
     async function go() {
+      await waitForPoseDetection();
       await tf.setBackend('webgl');
       await tf.ready();
       const stream = await navigator.mediaDevices.getUserMedia({video:true});
@@ -15,8 +30,8 @@
       video.srcObject = stream;
       await video.play();
 
-      const detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
+      const detector = await window.poseDetection.createDetector(
+        window.poseDetection.SupportedModels.MoveNet,
         { modelType: "MultiPose:Lightning", enable3D: true }
       );
       setInterval(async () => {
@@ -24,7 +39,7 @@
         console.log("3D?", poses[0] && poses[0].keypoints3D);
       }, 500);
     }
-    go();
+    window.addEventListener('DOMContentLoaded', go);
   </script>
 </body>
 </html>
