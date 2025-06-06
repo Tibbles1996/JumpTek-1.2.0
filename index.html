@@ -55,7 +55,6 @@
     #modeInstructions { font-size: 1rem; color: #7fffd4; margin: 8px 0 5px 0;}
     .official-label { color: #0ff; font-size: 1.05em; margin-left: 8px; font-weight: bold; }
   </style>
-  <!-- TensorFlow.js and MoveNet 3D -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.4.0"></script>
 </head>
@@ -648,8 +647,8 @@
     async function setupMoveNet3D() {
       loadingIndicator.style.display = 'block';
       try {
-        detector = await poseDetection.createDetector(
-          poseDetection.SupportedModels.MoveNet,
+        detector = await window.poseDetection.createDetector(
+          window.poseDetection.SupportedModels.MoveNet,
           {
             modelType: "SinglePose.Thunder",
             enableSmoothing: true,
