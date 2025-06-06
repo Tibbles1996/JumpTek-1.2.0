@@ -124,7 +124,7 @@
       <button id="zoomOutBtn">-</button>
     </div>
   </div>
-  <video id="video" autoplay playsinline style="display:block;z-index:10;opacity:1;"></video>
+  <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
     function waitForPoseDetection() {
       return new Promise((resolve) => {
@@ -532,7 +532,11 @@
     function drawLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-        ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(
+          video,
+          0, 0, video.videoWidth, video.videoHeight,
+          0, 0, canvas.width, canvas.height
+        );
       }
       if (lastDetections && lastDetections.keypoints) {
         ctx.save();
@@ -595,13 +599,16 @@
         });
         currentStream = stream;
         video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          resizeCanvasToScreen();
+          drawLoop();
+        };
         await video.play();
         loadingIndicator.style.display = 'none';
         videoTrack = stream.getVideoTracks()[0];
         zoomCapabilities = videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().zoom;
         zoomInBtn.disabled = !zoomCapabilities;
         zoomOutBtn.disabled = !zoomCapabilities;
-        resizeCanvasToScreen();
       } catch (err) {
         loadingIndicator.style.display = 'none';
         trampolineNotice.textContent = 'Unable to access camera. Please check your device settings and permissions, and make sure you are using HTTPS.';
@@ -750,7 +757,6 @@
         await startCamera();
         await waitForPoseDetection();
         await setupMoveNet3D();
-        drawLoop();
         poseLoop();
         startCalibration();
       } catch (e) {
