@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget</title>
+  <title>JumpTek Multi-Mode Jump Widget (Flight Time Official)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -53,6 +53,7 @@
     #customDims, #dminiDims { margin-bottom: 10px; }
     #customDims input, #dminiDims input { width: 90px; margin-right: 10px;}
     #modeInstructions { font-size: 1rem; color: #7fffd4; margin: 8px 0 5px 0;}
+    .official-label { color: #0ff; font-size: 1.05em; margin-left: 8px; font-weight: bold; }
   </style>
   <!-- TensorFlow.js and MoveNet Lightning -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
@@ -181,7 +182,6 @@
       ];
     }
     function pointInQuad(px, py, quad) {
-      // quad: [ [x0,y0], [x1,y1], [x2,y2], [x3,y3] ]
       function sign(p1, p2, p3) {
         return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1]);
       }
@@ -245,23 +245,24 @@
     let jumpState = 'on_ground';
     let jumpStartTime = 0;
     let jumpEndTime = 0;
+    let flightTime = 0;
     let yHistory = [];
-    let jumpHeightHistory = [];
     let JUMP_THRESHOLD = JUMP_THRESHOLD_DEFAULT;
     let debugMode = false;
 
     // Mode-specific data
     let mode = "eurotramp";
-    // Plane(s) - each plane gets: { imageQuad, worldQuad, homography }
     let planes = [];
-    // For EuroTramp and Custom, only one plane.
-    // For Double Mini: planes[0] is ramp, planes[1] is flat.
-    // To know which is which: planes[0].type === "ramp" or "flat"
     let baselineY = null;
     let calibrationClickPoints = [];
     let currentDrawPlane = 0;
 
-    // Plane definitions for UI reference
+    // State for official jump reporting
+    let liveJumpHeight = 0;
+    let officialJumpHeight = 0;
+    let showingOfficial = false;
+    let pendingOfficial = false;
+
     const modeInstructionsText = {
       eurotramp: "Tap the four corners of the trampoline in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.",
       doublemini: "Tap the four corners of the RAMP (Front-Left, Front-Right, Crease-Right, Crease-Left), then the four corners of the FLAT (Crease-Left, Crease-Right, Rear-Right, Rear-Left). The crease is the transition between ramp and flat.",
@@ -302,14 +303,12 @@
       modeInstructions.textContent = modeInstructionsText[mode] || "";
     }
 
-    // UI: show/hide dimension inputs based on mode
     function updateSettingsVisibility() {
       dminiDims.style.display = (mode === "doublemini") ? "block" : "none";
       customDims.style.display = (mode === "custom") ? "block" : "none";
       updateModeInstructions();
     }
 
-    // Retrieve world quads for all planes in current mode
     function getPlanesWorldQuads() {
       if (mode === "eurotramp") {
         return [[
@@ -346,10 +345,12 @@
       currentDrawPlane = 0;
       widgetJumpHeightDisplay.style.display = "none";
       trampolineNotice.textContent = modeInstructionsText[mode] || "";
+      showingOfficial = false;
+      officialJumpHeight = 0;
+      pendingOfficial = false;
       updateCalibrationUI();
     }
 
-    // Mark points: on click, store for current plane, when enough are marked, move to next plane or to stand-still phase
     canvas.addEventListener('click', function(e) {
       try {
         if (calibrationPhase !== "mark_corners") return;
@@ -357,7 +358,7 @@
         const x = (e.clientX - rect.left) * (video.videoWidth / rect.width);
         const y = (e.clientY - rect.top) * (video.videoHeight / rect.height);
         calibrationClickPoints.push([x, y]);
-        let enough = false, thisWorldQuad = null;
+        let enough = false;
         if (mode === "eurotramp" || mode === "custom") {
           if (calibrationClickPoints.length === 4) enough = true;
         } else if (mode === "doublemini") {
@@ -376,7 +377,6 @@
             trampolineNotice.textContent = "Area set! Stand still in the marked area and press Calibrate.";
           } else if (mode === "doublemini") {
             if (currentDrawPlane === 0) {
-              // Store ramp
               planes.push({
                 type: "ramp",
                 imageQuad: calibrationClickPoints.slice(0,4),
@@ -385,7 +385,6 @@
               currentDrawPlane++;
               trampolineNotice.textContent = "Ramp set! Now tap the four corners of the FLAT area (Crease-Left, Crease-Right, Rear-Right, Rear-Left).";
             } else if (currentDrawPlane === 1) {
-              // Store flat
               planes.push({
                 type: "flat",
                 imageQuad: calibrationClickPoints.slice(4,8),
@@ -402,7 +401,6 @@
     restartDrawBtn.addEventListener('click', startCalibration);
     calibrateBtn.addEventListener('click', markBaselineY);
 
-    // Keypoint logic
     function getAnkles(keypoints) {
       const left = keypoints[15];
       const right = keypoints[16];
@@ -423,20 +421,16 @@
       return null;
     }
 
-    // Translator function for double mini: determine which plane to use based on foot location
     function getPlaneForAnkle(x, y) {
-      // For double mini, ramp is planes[0], flat is planes[1]
       if (mode === "doublemini" && planes.length === 2) {
-        // If in ramp quad, use ramp; else use flat.
         if (pointInQuad(x, y, planes[0].imageQuad)) return planes[0];
         if (pointInQuad(x, y, planes[1].imageQuad)) return planes[1];
-        // If not in either, return closest by Y coordinate (default to ramp)
         return (y < (planes[0].imageQuad[2][1] + planes[0].imageQuad[3][1]) / 2) ? planes[0] : planes[1];
       }
-      // For other modes, only one plane
       return planes[0];
     }
 
+    // --- Main jump calculation logic ---
     function computeAndSendJump(keypoints) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
       if (calibrationPhase !== 'complete' || baselineY === null || !planes.length) {
@@ -448,62 +442,68 @@
         sendJumpHeight(0, false, 'no_ankles');
         return;
       }
-      // Pick plane and homography for this ankle
       const plane = getPlaneForAnkle(ankle.x, ankle.y);
       if (!plane.homography) {
         sendJumpHeight(0, false, 'no_homography');
         return;
       }
-      // Project ankle position to real-world trampoline coordinates
       const projected = applyHomography(plane.homography, [ankle.x, ankle.y]);
-      const currentY = projected[1]; // in meters, Y is vertical on trampoline plane
+      const currentY = projected[1];
 
-      // Smooth Y using average of history
       yHistory.push(currentY);
       if (yHistory.length > 6) yHistory.shift();
       let smoothedY = yHistory.reduce((a,b) => a+b, 0)/yHistory.length;
 
-      // Height in meters (baselineY - smoothedY), positive when jumping
-      let jumpHeight = baselineY - smoothedY;
+      // Live jump height for feedback
+      liveJumpHeight = baselineY - smoothedY;
 
-      // State machine
+      // Jump state machine for flight time
       switch(jumpState) {
         case 'on_ground':
-          if (jumpHeight > JUMP_THRESHOLD) {
+          if (liveJumpHeight > JUMP_THRESHOLD) {
             jumpState = 'ascending';
             jumpStartTime = performance.now();
-            widgetJumpHeightDisplay.textContent = `Jump: 0.00 m`;
+            pendingOfficial = false;
+            showingOfficial = false;
+            widgetJumpHeightDisplay.innerHTML = `Jump: 0.00 m`;
             sendJumpHeight(0, true, 'takeoff');
           } else {
-            widgetJumpHeightDisplay.textContent = `Jump: 0.00 m`;
-            sendJumpHeight(0, true, 'ground');
+            if (!showingOfficial) {
+              widgetJumpHeightDisplay.innerHTML = `Jump: 0.00 m`;
+              sendJumpHeight(0, true, 'ground');
+            } else {
+              // Show official jump height until next jump
+              widgetJumpHeightDisplay.innerHTML = `Jump: ${officialJumpHeight.toFixed(2)} m <span class="official-label">(flight time)</span>`;
+              sendJumpHeight(officialJumpHeight, true, 'landed');
+            }
           }
           break;
         case 'ascending':
-          if (jumpHeight < JUMP_THRESHOLD/2) {
+          if (liveJumpHeight < JUMP_THRESHOLD/2) {
             // Landed
             jumpState = 'on_ground';
             jumpEndTime = performance.now();
-            let flightTime = (jumpEndTime - jumpStartTime) / 1000;
-            let flightJumpHeight = (GRAVITY * Math.pow(flightTime, 2)) / 8;
-            let finalJump = 0.7*jumpHeight + 0.3*flightJumpHeight;
-            finalJump = finalJump > 0 ? finalJump : 0;
-            widgetJumpHeightDisplay.textContent = `Jump: ${finalJump.toFixed(2)} m`;
-            sendJumpHeight(finalJump, true, 'landed');
-            jumpHeightHistory.push(finalJump);
+            flightTime = (jumpEndTime - jumpStartTime) / 1000;
+            officialJumpHeight = (GRAVITY * Math.pow(flightTime, 2)) / 8;
+            officialJumpHeight = (officialJumpHeight > 0) ? officialJumpHeight : 0;
+            showingOfficial = true;
+            pendingOfficial = true;
+            widgetJumpHeightDisplay.innerHTML = `Jump: ${officialJumpHeight.toFixed(2)} m <span class="official-label">(flight time)</span>`;
+            sendJumpHeight(officialJumpHeight, true, 'landed');
             if (debugMode) {
-              debugValuesDisplay.textContent = `Homography: ${jumpHeight.toFixed(2)}m\nFlight: ${flightJumpHeight.toFixed(2)}m\nFinal: ${finalJump.toFixed(2)}m\nTime: ${flightTime.toFixed(3)}s`;
+              debugValuesDisplay.textContent = `Flight: ${officialJumpHeight.toFixed(2)}m\nTime: ${flightTime.toFixed(3)}s`;
             }
           } else {
-            widgetJumpHeightDisplay.textContent = `Jump: ${jumpHeight.toFixed(2)} m`;
-            sendJumpHeight(jumpHeight, true, 'ascending');
+            showingOfficial = false;
+            widgetJumpHeightDisplay.innerHTML = `Jump: ${liveJumpHeight.toFixed(2)} m`;
+            sendJumpHeight(liveJumpHeight, true, 'ascending');
           }
           break;
       }
 
       // Debug info
       if (debugMode) {
-        rawHeightDebugDisplay.textContent = `Jump Height: ${jumpHeight.toFixed(3)}m (${jumpState})`;
+        rawHeightDebugDisplay.textContent = `Jump Height: ${liveJumpHeight.toFixed(3)}m (${jumpState})`;
         rawHeightDebugDisplay.style.display = "block";
         debugValuesDisplay.style.display = "block";
       } else {
@@ -524,7 +524,6 @@
       }, '*');
     }
 
-    // Mark baselineY using current pose and selected plane
     function markBaselineY() {
       if (!lastDetections || !planes.length || !planes[0].homography) {
         trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
@@ -596,7 +595,6 @@
       applyDebugMode();
     }
 
-    // Draw UI
     function drawTrampolineArea(ctx, points, color = '#00f') {
       try {
         if (!Array.isArray(points) || points.length < 1) return;
@@ -647,13 +645,11 @@
       restartDrawBtn.style.display = (calibrationPhase === "mark_corners") ? "block" : "none";
     }
 
-    // Main draw loop
     function drawLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
         ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, canvas.width, canvas.height);
       }
-      // Draw pose keypoints if available
       if (lastDetections) {
         ctx.save();
         ctx.fillStyle = "#ff0";
@@ -666,7 +662,6 @@
             ctx.fill();
           }
         }
-        // Draw ankles in red
         ctx.fillStyle = "#f00";
         const {left, right} = getAnkles(lastDetections);
         if (left) {
@@ -681,7 +676,6 @@
         }
         ctx.restore();
       }
-      // Draw trampoline areas
       if (calibrationPhase === "mark_corners") {
         let q1 = calibrationClickPoints.slice(0,4);
         let q2 = calibrationClickPoints.slice(4,8);
@@ -696,7 +690,6 @@
           drawTrampolineArea(ctx, pl.imageQuad.map(([x, y]) => [x * (canvas.width / video.videoWidth), y * (canvas.height / video.videoHeight)]), idx === 0 ? "#00f" : "#0c9");
         });
       }
-      // UI
       updateCalibrationUI();
       updateRestartDrawBtnVisibility();
       requestAnimationFrame(drawLoop);
@@ -765,7 +758,6 @@
     }
 
     setInterval(() => {
-      // After calibration, keep jump loop going
       if (
         lastDetections &&
         calibrationPhase === "complete"
@@ -774,7 +766,6 @@
       }
     }, 33);
 
-    // Settings UI
     settingsBtn.addEventListener('click', e => {
       settingsPopover.classList.add('open');
       settingsPopover.style.display = 'flex';
@@ -796,7 +787,6 @@
       settingsPopover.classList.remove('open');
       settingsPopover.style.display = 'none';
       trampolineNotice.textContent = "Settings saved!";
-      // If user changed mode or area, re-calibrate
       mode = trampolineModeSelect.value;
       startCalibration();
       updateSettingsVisibility();
@@ -810,7 +800,6 @@
     [customLength, customLengthUnit, customWidth, customWidthUnit,
       dminiRampLen, dminiRampWid, dminiFlatLen, dminiFlatWid
     ].forEach(inp => inp.addEventListener('input', () => {
-      // Reset calibration if area changes
       startCalibration();
     }));
 
@@ -845,7 +834,6 @@
       resizeCanvasToScreen();
     });
 
-    // On load
     window.addEventListener('DOMContentLoaded', async () => {
       try {
         loadSettingsFromStorage();
@@ -862,7 +850,6 @@
     });
 
     // --- Compute homographies after corners are set ---
-    // When going to 'stand_still', generate homographies!
     const setHomographies = () => {
       if (mode === "eurotramp" || mode === "custom") {
         if (planes.length === 1 && planes[0].imageQuad && planes[0].worldQuad) {
@@ -875,7 +862,6 @@
         }
       }
     };
-    // Watch calibrationPhase for transition to 'stand_still'
     const origUpdateCalibrationUI = updateCalibrationUI;
     updateCalibrationUI = function() {
       origUpdateCalibrationUI();
