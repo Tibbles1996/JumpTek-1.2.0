@@ -126,6 +126,21 @@
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
+    function waitForPoseDetection() {
+      return new Promise((resolve) => {
+        function check() {
+          if (window.poseDetection && window.poseDetection.createDetector) {
+            resolve();
+          } else {
+            setTimeout(check, 20);
+          }
+        }
+        check();
+      });
+    }
+
+    // [All the rest of your previous JS logic remains unchanged, with all references to poseDetection as window.poseDetection]
+
     // --- CAMERA/VIDEO/POSE/UTILS ---
     const JUMP_THRESHOLD_DEFAULT = 0.08;
     const GRAVITY = 9.81;
@@ -159,20 +174,16 @@
     const jumpThresholdInput = document.getElementById('jumpThreshold');
     const trampolineModeSelect = document.getElementById('trampolineMode');
     const modeInstructions = document.getElementById('modeInstructions');
-    // Double Mini
     const dminiDims = document.getElementById('dminiDims');
     const dminiRampLen = document.getElementById('dminiRampLen');
     const dminiRampWid = document.getElementById('dminiRampWid');
     const dminiFlatLen = document.getElementById('dminiFlatLen');
     const dminiFlatWid = document.getElementById('dminiFlatWid');
-    // Custom
     const customDims = document.getElementById('customDims');
     const customLength = document.getElementById('customLength');
     const customWidth = document.getElementById('customWidth');
     const customLengthUnit = document.getElementById('customLengthUnit');
     const customWidthUnit = document.getElementById('customWidthUnit');
-
-    // Calibration
     let calibrationPhase = 'mark_corners';
     let jumpState = 'on_ground';
     let jumpStartTime = 0;
@@ -181,31 +192,23 @@
     let yHistory = [];
     let JUMP_THRESHOLD = JUMP_THRESHOLD_DEFAULT;
     let debugMode = false;
-
-    // Mode-specific data
     let mode = "eurotramp";
     let planes = [];
-    let baselineY = null; // 3D Y baseline (vertical, in meters)
+    let baselineY = null;
     let calibrationClickPoints = [];
     let currentDrawPlane = 0;
-
-    // State for official jump reporting
     let liveJumpHeight = 0;
     let officialJumpHeight = 0;
     let showingOfficial = false;
     let pendingOfficial = false;
-
     const modeInstructionsText = {
       eurotramp: "Tap the four corners of the trampoline in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left.",
       doublemini: "Tap the four corners of the RAMP (Front-Left, Front-Right, Crease-Right, Crease-Left), then the four corners of the FLAT (Crease-Left, Crease-Right, Rear-Right, Rear-Left). The crease is the transition between ramp and flat.",
       custom: "Tap the four corners of your jump area in this order: Top-Left, Top-Right, Bottom-Right, Bottom-Left."
     };
-
-    // Default dimensions for calibration UI (still needed for UI reference)
     const EUROTRAMP_LENGTH = 5.18, EUROTRAMP_WIDTH = 3.05;
     const DMINI_RAMP_LENGTH = 1.18, DMINI_RAMP_WIDTH = 1.1;
     const DMINI_FLAT_LENGTH = 1.62, DMINI_FLAT_WIDTH = 1.1;
-
     function getCustomMeters(val, unit) {
       val = parseFloat(val);
       if (unit === "m") return val;
@@ -213,7 +216,6 @@
       if (unit === "in") return val * 0.0254;
       return val;
     }
-
     function jtError(area, message, errObj) {
       try {
         let msg = `[JTERROR][${area}] ${message}`;
@@ -225,22 +227,18 @@
         console.error("[JTERROR][jtError] Logging failure", e);
       }
     }
-
     function resizeCanvasToScreen() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     }
-
     function updateModeInstructions() {
       modeInstructions.textContent = modeInstructionsText[mode] || "";
     }
-
     function updateSettingsVisibility() {
       dminiDims.style.display = (mode === "doublemini") ? "block" : "none";
       customDims.style.display = (mode === "custom") ? "block" : "none";
       updateModeInstructions();
     }
-
     function getPlanesWorldQuads() {
       if (mode === "eurotramp") {
         return [[
@@ -266,7 +264,6 @@
         ]];
       }
     }
-
     function startCalibration() {
       calibrationPhase = "mark_corners";
       calibrationClickPoints = [];
@@ -280,7 +277,6 @@
       pendingOfficial = false;
       updateCalibrationUI();
     }
-
     canvas.addEventListener('click', function(e) {
       try {
         if (calibrationPhase !== "mark_corners") return;
@@ -330,10 +326,7 @@
     });
     restartDrawBtn.addEventListener('click', startCalibration);
     calibrateBtn.addEventListener('click', markBaselineY);
-
-    // 3D ankle keypoint helpers for MoveNet 3D
     function getAnkles3D(keypoints3d) {
-      // MoveNet 3D uses COCO order: left ankle = 15, right ankle = 16
       const left = keypoints3d[15];
       const right = keypoints3d[16];
       return {
@@ -352,8 +345,6 @@
       }
       return null;
     }
-
-    // --- MAIN JUMP CALCULATION LOGIC ---
     function computeAndSendJump3D(keypoints3d) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
       if (calibrationPhase !== 'complete' || baselineY === null) {
@@ -365,17 +356,11 @@
         sendJumpHeight(0, false, 'no_ankles');
         return;
       }
-      // MoveNet 3D y is vertical in meters.
       const currentY = ankle.y;
-
       yHistory.push(currentY);
       if (yHistory.length > 6) yHistory.shift();
       let smoothedY = yHistory.reduce((a,b) => a+b, 0)/yHistory.length;
-
-      // Live jump height for feedback (relative to calibration)
-      liveJumpHeight = smoothedY - baselineY; // higher y = higher off ground
-
-      // Jump state machine for flight time
+      liveJumpHeight = smoothedY - baselineY;
       switch(jumpState) {
         case 'on_ground':
           if (liveJumpHeight > JUMP_THRESHOLD) {
@@ -397,7 +382,6 @@
           break;
         case 'ascending':
           if (liveJumpHeight < JUMP_THRESHOLD/2) {
-            // Landed
             jumpState = 'on_ground';
             jumpEndTime = performance.now();
             flightTime = (jumpEndTime - jumpStartTime) / 1000;
@@ -417,8 +401,6 @@
           }
           break;
       }
-
-      // Debug info
       if (debugMode) {
         rawHeightDebugDisplay.textContent = `Jump Height: ${liveJumpHeight.toFixed(3)}m (${jumpState})`;
         rawHeightDebugDisplay.style.display = "block";
@@ -428,7 +410,6 @@
         debugValuesDisplay.style.display = "none";
       }
     }
-
     function sendJumpHeight(jumpHeight, hasTracking, jumpState = 'unknown') {
       window.parent.postMessage({
         type: 'jumpHeight',
@@ -440,7 +421,6 @@
         }
       }, '*');
     }
-
     function markBaselineY() {
       if (!lastDetections || !lastDetections.keypoints3D) {
         trampolineNotice.textContent = "No pose detected or not calibrated. Please ensure your body is fully visible and try again.";
@@ -462,7 +442,7 @@
         if (lastDetections && lastDetections.keypoints3D) {
           let ankle = getHighestAnkle3D(lastDetections.keypoints3D);
           if (ankle) {
-            samples.push(ankle.y); // y is vertical position in meters
+            samples.push(ankle.y);
           }
         }
         sampleCount++;
@@ -470,7 +450,6 @@
       }
       sampleLoop();
     }
-
     function applyDebugMode() {
       debugMode = debugModeCheckbox.checked;
       debugValuesDisplay.style.display = debugMode ? "block" : "none";
@@ -509,7 +488,6 @@
       updateSettingsVisibility();
       applyDebugMode();
     }
-
     function drawTrampolineArea(ctx, points, color = '#00f') {
       try {
         if (!Array.isArray(points) || points.length < 1) return;
@@ -531,7 +509,6 @@
         jtError("ui", "Failed to draw trampoline area", e);
       }
     }
-
     function updateCalibrationUI() {
       if (calibrationPhase === "mark_corners" || calibrationPhase === "complete") {
         calibrateBtn.style.display = "none";
@@ -558,7 +535,6 @@
     function updateRestartDrawBtnVisibility() {
       restartDrawBtn.style.display = (calibrationPhase === "mark_corners") ? "block" : "none";
     }
-
     function drawLoop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
@@ -609,7 +585,6 @@
       updateRestartDrawBtnVisibility();
       requestAnimationFrame(drawLoop);
     }
-
     async function startCamera() {
       loadingIndicator.style.display = 'block';
       if (currentStream) {
@@ -643,7 +618,6 @@
         throw err;
       }
     }
-
     async function setupMoveNet3D() {
       loadingIndicator.style.display = 'block';
       try {
@@ -664,7 +638,6 @@
         jtError("movenet3d", "Initialization error", e);
       }
     }
-
     async function poseLoop() {
       poseLoopActive = true;
       let lastFrameTime = performance.now();
@@ -679,7 +652,6 @@
               flipHorizontal: useFrontCamera,
               enable3D: true
             });
-            // Logging for debugging
             if (!poses || !poses[0]) {
               console.error("No pose detected at all.");
               trampolineNotice.textContent = "No pose detected. Please ensure you are visible on camera.";
@@ -705,7 +677,6 @@
       }
       poseLoopActive = false;
     }
-
     setInterval(() => {
       if (
         lastDetections &&
@@ -715,7 +686,6 @@
         computeAndSendJump3D(lastDetections.keypoints3D);
       }
     }, 33);
-
     settingsBtn.addEventListener('click', e => {
       settingsPopover.classList.add('open');
       settingsPopover.style.display = 'flex';
@@ -741,7 +711,6 @@
       startCalibration();
       updateSettingsVisibility();
     });
-
     trampolineModeSelect.addEventListener('change', () => {
       mode = trampolineModeSelect.value;
       updateSettingsVisibility();
@@ -752,7 +721,6 @@
     ].forEach(inp => inp.addEventListener('input', () => {
       startCalibration();
     }));
-
     switchCameraBtn.addEventListener('click', async () => {
       useFrontCamera = !useFrontCamera;
       await startCamera();
@@ -779,12 +747,11 @@
       await videoTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
       resetCalibrationForZoom();
     });
-
     window.addEventListener('resize', () => {
       resizeCanvasToScreen();
     });
-
     window.addEventListener('DOMContentLoaded', async () => {
+      await waitForPoseDetection();
       try {
         loadSettingsFromStorage();
         await startCamera();
