@@ -226,7 +226,8 @@
       );
       poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-tasks/pose_landmarker_lite.task"
+          // FIX: Use updated model URL (2025)
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-assets/pose_landmarker.task"
         },
         runningMode: "VIDEO",
         numPoses: 1,
