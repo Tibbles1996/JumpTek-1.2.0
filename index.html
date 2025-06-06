@@ -1,45 +1,539 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.18.0/dist/tf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.5.0-nightly.7/dist/pose-detection.js"></script>
+  <meta charset="UTF-8">
+  <title>JumpTek AI Edge Tracker Widget (Full, Automated Homography)</title>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
+    #container { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+    #canvas, #video {
+      position: absolute; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      display: block; z-index: 1; background: #000; border: none;
+      pointer-events: none;
+    }
+    #canvas { z-index: 2; pointer-events: auto; }
+    #video { z-index: 1; opacity: 0; }
+    #buttonRow { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; z-index: 20; }
+    #switchCameraBtn, #settingsBtn, #zoomInBtn, #zoomOutBtn {
+      position: static; margin: 0; padding: 10px 18px; color: #fff;
+      border: none; border-radius: 16px; font-size: 1.3rem; cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s;
+      display: flex; align-items: center; justify-content: center; font-weight: bold;
+      background: #27ae60;
+    }
+    #switchCameraBtn:hover, #settingsBtn:hover, #zoomInBtn:hover, #zoomOutBtn:hover { background: #219150; }
+    #switchCameraBtn img, #settingsBtn img { width: 28px; height: 28px; display: block; }
+    #zoomControls { position: absolute; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 20; }
+    #zoomInBtn, #zoomOutBtn { font-size: 2rem; padding: 5px 15px; width: 60px; height: 60px; border-radius: 50%; background: rgba(39, 174, 96, 0.8); box-shadow: 0 4px 10px rgba(0,0,0,0.3);}
+    #restartDrawBtn { display: none; position: absolute; top: 20px; left: 20px; z-index: 21; padding: 10px 22px; border-radius: 14px; background: #e74c3c; color: #fff; border: none; font-size: 1.1rem; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: pointer;}
+    #restartDrawBtn:hover { background: #b53224; }
+    #loadingIndicator { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 30; color: #ff0; background: rgba(0,0,0,0.7); padding: 7px 16px; border-radius: 12px; font-size: 1.1rem; display: none; pointer-events: none;}
+    #trampolineNotice { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); color: #0f0; background: rgba(0,0,0,0.7); padding: 10px 24px; border-radius: 16px; font-size: 1.2rem; width: auto; max-width: 90vw; text-align: center; pointer-events: none; z-index: 30;}
+    #settingsPopover { display: none; position: absolute; top: 60px; left: 50%; transform: translateX(-50%); min-width: 320px; background: rgba(34,34,34,0.98); border-radius: 16px; box-shadow: 0 6px 30px rgba(0,0,0,0.35), 0 1.5px 3px #222; padding: 24px 28px 18px 28px; z-index: 100; color: #fff; flex-direction: column; gap: 12px;}
+    #settingsPopover.open { display: flex; animation: popIn 0.18s; }
+    @keyframes popIn { from { opacity: 0; transform: translateX(-50%) scale(0.97); } to   { opacity: 1; transform: translateX(-50%) scale(1); } }
+    #settingsPopover label { font-size: 1rem; margin-bottom: 2px; }
+    #settingsPopover input[type="number"], #settingsPopover input[type="checkbox"] { padding: 6px; font-size: 1rem; border-radius: 6px; border: 1px solid #888; width: 110px; margin-bottom: 8px; background: #222; color: #fff;}
+    #settingsPopover input[type="checkbox"] { width: auto; margin-left: 10px; vertical-align: middle; }
+    #settingsPopover .checkbox-container { display: flex; align-items: center; margin-top: 5px; }
+    #settingsPopover .desc { color: #aaa; font-size: 0.92rem; margin-bottom: 7px; margin-top: -4px; }
+    #settingsPopover .close-btn { position: absolute; top: 10px; right: 16px; background: none; border: none; color: #aaa; font-size: 1.35rem; cursor: pointer; padding: 0; line-height: 1;}
+    #settingsPopover .close-btn:hover { color: #fff; }
+    #saveSettingsBtn { margin-top: 12px; padding: 10px 18px; border-radius: 12px; background: #27ae60; color: #fff; font-size: 1rem; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s; align-self: flex-end;}
+    #saveSettingsBtn:active, #saveSettingsBtn:focus { background: #219150; }
+    #widgetJumpHeightDisplay { display: none; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
+    #rawHeightDebugDisplay, #debugValuesDisplay, #frameRateDisplay { position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 8px 15px; border-radius: 12px; font-size: 0.9rem; z-index: 20; pointer-events: none; text-align: left; display: none;}
+    #rawHeightDebugDisplay.positive { color: #0f0; }
+    #debugValuesDisplay { top: 120px; max-width: 300px; white-space: pre-line; }
+    #frameRateDisplay { top: 80px; }
+  </style>
+  <!-- Fix: Add numeric.js for homography SVD support -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
+  <script type="module">
+    import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
+    window.FilesetResolver = FilesetResolver;
+    window.PoseLandmarker = PoseLandmarker;
+  </script>
 </head>
 <body>
-  <video id="video" autoplay playsinline></video>
-  <script>
-    // Wait until the poseDetection library is loaded
-    function waitForPoseDetection() {
-      return new Promise((resolve) => {
-        function check() {
-          if (window.poseDetection && window.poseDetection.createDetector) {
-            resolve();
-          } else {
-            setTimeout(check, 20);
+  <div id="container">
+    <button id="restartDrawBtn">Restart Draw</button>
+    <canvas id="canvas"></canvas>
+    <div id="buttonRow">
+      <button id="switchCameraBtn" aria-label="Switch camera" tabindex="0" role="button">
+        <img src="https://static-00.iconduck.com/assets.00/camera-switch-icon-1024x1024-9oe5epjn.png" alt="Switch Camera">
+      </button>
+      <button class="settings-btn" id="settingsBtn" aria-label="Open settings" tabindex="0" role="button">
+        <img src="https://creazilla-store.fra1.digitaloceanspaces.com/icons/3430447/ruler-icon-md.png" alt="Calibration Settings" />
+      </button>
+    </div>
+    <div id="settingsPopover">
+      <button class="close-btn" id="closeSettingsBtn" aria-label="Close settings">&times;</button>
+      <div>
+        <label for="jumpThreshold">Minimum Jump Threshold (meters):</label><br>
+        <input type="number" step="0.01" min="0.01" max="0.5" value="0.08" id="jumpThreshold">
+        <div class="desc">Minimum height difference to be considered a jump (reduces false positives from minor movements).</div>
+      </div>
+      <div class="checkbox-container">
+        <label for="debugMode">Enable Debug Mode (show raw data):</label>
+        <input type="checkbox" id="debugMode">
+      </div>
+      <button id="saveSettingsBtn">Save</button>
+    </div>
+    <div id="trampolineNotice">Click the four corners of the trampoline in the camera view (10x17 ft). Calibration will be automatic.</div>
+    <div id="loadingIndicator">Loading...</div>
+    <div id="widgetJumpHeightDisplay">Jump: 0.00 m</div>
+    <div id="rawHeightDebugDisplay">Raw Z-Delta: 0.000m</div>
+    <div id="debugValuesDisplay"></div>
+    <div id="frameRateDisplay">FPS: 0</div>
+    <div id="zoomControls">
+      <button id="zoomInBtn">+</button>
+      <button id="zoomOutBtn">-</button>
+    </div>
+  </div>
+  <video id="video" autoplay playsinline style="display:none;"></video>
+  <script type="module">
+    //=========================
+    // STATE, CONSTANTS, DOM
+    //=========================
+    const GRAVITY = 9.81;
+    let JUMP_THRESHOLD = 0.08;
+    let useFrontCamera = false;
+    let currentStream = null;
+    let videoTrack = null;
+    let zoomCapabilities = null;
+    let poseLandmarker = null;
+    let vision = null;
+    let lastPoseResult = null;
+    let lastFrameTime = null;
+    let frameCount = 0;
+    let lastFpsUpdateTime = 0;
+
+    // Calibration state
+    let calibrationPhase = 'mark_corners';
+    let trampolineClickPoints = [];
+    let homography = null;
+    let trampolineCornersWorld = [
+      [0, 0],
+      [10 * 0.3048, 0],
+      [10 * 0.3048, 17 * 0.3048],
+      [0, 17 * 0.3048]
+    ];
+
+    // Jump detection state
+    let jumpState = 'on_ground';
+    let jumpStartTime = 0;
+    let jumpEndTime = 0;
+    let highestPointY = null;
+    let baselineY = null;
+    let lastReportedJumpHeight = 0;
+
+    // Debug/settings
+    let debugMode = false;
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const video = document.getElementById('video');
+    const debugModeCheckbox = document.getElementById('debugMode');
+    const rawHeightDebugDisplay = document.getElementById('rawHeightDebugDisplay');
+    const debugValuesDisplay = document.getElementById('debugValuesDisplay');
+    const frameRateDisplay = document.getElementById('frameRateDisplay');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsPopover = document.getElementById('settingsPopover');
+    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+    const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    const jumpThresholdInput = document.getElementById('jumpThreshold');
+    const trampolineNotice = document.getElementById('trampolineNotice');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const switchCameraBtn = document.getElementById('switchCameraBtn');
+    const restartDrawBtn = document.getElementById('restartDrawBtn');
+    const widgetJumpHeightDisplay = document.getElementById('widgetJumpHeightDisplay');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+
+    function resizeCanvasToScreen() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvasToScreen);
+
+    //=========================
+    // HOMOGRAPHY
+    //=========================
+    function computeHomography(src, dst) {
+      let A = [];
+      for (let i = 0; i < 4; i++) {
+        let [x, y] = src[i], [u, v] = dst[i];
+        A.push([-x, -y, -1, 0, 0, 0, x * u, y * u, u]);
+        A.push([0, 0, 0, -x, -y, -1, x * v, y * v, v]);
+      }
+      let svd = numeric.svd(A);
+      let h = svd.V[8];
+      for (let i = 0; i < h.length; i++) h[i] = h[i] / h[8];
+      return [
+        [h[0], h[1], h[2]],
+        [h[3], h[4], h[5]],
+        [h[6], h[7], h[8]]
+      ];
+    }
+    function applyHomography(H, x, y) {
+      const d = H[2][0] * x + H[2][1] * y + H[2][2];
+      const u = (H[0][0] * x + H[0][1] * y + H[0][2]) / d;
+      const v = (H[1][0] * x + H[1][1] * y + H[1][2]) / d;
+      return [u, v];
+    }
+
+    //=========================
+    // CAMERA SETUP
+    //=========================
+    async function startCamera() {
+      loadingIndicator.style.display = 'block';
+      if (currentStream) {
+        try { currentStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: useFrontCamera ? 'user' : 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+        currentStream = stream;
+        video.srcObject = stream;
+        await video.play();
+        loadingIndicator.style.display = 'none';
+        videoTrack = stream.getVideoTracks()[0];
+        zoomCapabilities = videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().zoom;
+        zoomInBtn.disabled = !zoomCapabilities;
+        zoomOutBtn.disabled = !zoomCapabilities;
+        resizeCanvasToScreen();
+      } catch (err) {
+        loadingIndicator.style.display = 'none';
+        trampolineNotice.textContent = 'Unable to access camera. Please check device settings and HTTPS.';
+        trampolineNotice.style.color = '#f00';
+        zoomInBtn.disabled = true; zoomOutBtn.disabled = true;
+        throw err;
+      }
+    }
+
+    async function setupPoseLandmarker() {
+      loadingIndicator.style.display = 'block';
+      vision = await window.FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      );
+      poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-tasks/pose_landmarker_lite.task"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1,
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+      loadingIndicator.style.display = 'none';
+    }
+
+    //=========================
+    // DRAWING
+    //=========================
+    function drawTrampolineArea(ctx, points, color = '#00f') {
+      if (!Array.isArray(points) || points.length < 1) return;
+      ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
+      ctx.closePath(); ctx.stroke(); ctx.restore();
+      ctx.save(); ctx.fillStyle = "#0ff";
+      for (let i = 0; i < points.length; i++) {
+        ctx.beginPath();
+        ctx.arc(points[i][0], points[i][1], 10, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.font = "bold 18px Arial";
+        ctx.fillStyle = "#fff";
+        ctx.fillText(`P${i + 1}`, points[i][0] + 10, points[i][1] - 10);
+      }
+      ctx.restore();
+    }
+
+    function drawLoop() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight,
+          0, 0, canvas.width, canvas.height
+        );
+      }
+      // Draw calibration corners
+      if (trampolineClickPoints.length > 0) {
+        drawTrampolineArea(ctx, trampolineClickPoints.map(([x, y]) => [
+          x * (canvas.width / video.videoWidth),
+          y * (canvas.height / video.videoHeight)
+        ]), "#00f");
+      }
+      // Draw pose landmarks and mapped ankles
+      if (lastPoseResult && lastPoseResult.landmarks && lastPoseResult.landmarks.length > 0) {
+        const lm = lastPoseResult.landmarks[0];
+        ctx.save();
+        ctx.fillStyle = "#ff0";
+        for (const pt of lm) {
+          ctx.beginPath();
+          ctx.arc(pt.x * canvas.width, pt.y * canvas.height, 6, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+        ctx.restore();
+        if (homography && video.videoWidth && video.videoHeight) {
+          for (const ankleIdx of [27, 28]) {
+            if (lm[ankleIdx]) {
+              const [imgX, imgY] = [lm[ankleIdx].x * video.videoWidth, lm[ankleIdx].y * video.videoHeight];
+              const [wx, wy] = applyHomography(homography, imgX, imgY);
+              ctx.save();
+              ctx.fillStyle = "#0f0";
+              ctx.beginPath();
+              ctx.arc(
+                wx * (canvas.width / (10 * 0.3048)),
+                wy * (canvas.height / (17 * 0.3048)),
+                12, 0, 2 * Math.PI);
+              ctx.fill();
+              ctx.restore();
+            }
           }
         }
-        check();
-      });
+      }
+      // FPS
+      frameCount++;
+      const now = performance.now();
+      if (!lastFpsUpdateTime || now - lastFpsUpdateTime >= 500) {
+        const fps = (frameCount / (now - (lastFpsUpdateTime || now))) * 1000;
+        frameRateDisplay.textContent = `FPS: ${fps.toFixed(1)}`;
+        frameRateDisplay.style.display = debugMode ? "block" : "none";
+        frameCount = 0;
+        lastFpsUpdateTime = now;
+      }
+      requestAnimationFrame(drawLoop);
     }
 
-    async function go() {
-      await waitForPoseDetection();
-      await tf.setBackend('webgl');
-      await tf.ready();
-      const stream = await navigator.mediaDevices.getUserMedia({video:true});
-      const video = document.getElementById('video');
-      video.srcObject = stream;
-      await video.play();
-
-      const detector = await window.poseDetection.createDetector(
-        window.poseDetection.SupportedModels.MoveNet,
-        { modelType: "MultiPose:Lightning", enable3D: true }
-      );
-      setInterval(async () => {
-        const poses = await detector.estimatePoses(video, {maxPoses:1, enable3D:true});
-        console.log("3D?", poses[0] && poses[0].keypoints3D);
-      }, 500);
+    //=========================
+    // POSE INFERENCE LOOP
+    //=========================
+    async function poseLoop() {
+      if (!poseLandmarker) return;
+      let poseInterval = 1000 / 20;
+      let lastPoseRequestTime = 0;
+      async function loop() {
+        if (video.readyState === 4) {
+          const now = performance.now();
+          if (now - lastPoseRequestTime > poseInterval) {
+            lastPoseRequestTime = now;
+            lastPoseResult = poseLandmarker.detectForVideo(video, now);
+          }
+        }
+        requestAnimationFrame(loop);
+      }
+      loop();
     }
-    window.addEventListener('DOMContentLoaded', go);
+
+    //=========================
+    // CALIBRATION EVENTS
+    //=========================
+    canvas.addEventListener('click', function (e) {
+      try {
+        if (calibrationPhase !== "mark_corners") return;
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (video.videoWidth / rect.width);
+        const y = (e.clientY - rect.top) * (video.videoHeight / rect.height);
+        trampolineClickPoints.push([x, y]);
+        if (trampolineClickPoints.length === 4) {
+          homography = computeHomography(trampolineClickPoints, trampolineCornersWorld);
+          calibrationPhase = "complete";
+          trampolineNotice.textContent = "Calibration complete! All jump heights and positions are now in meters.";
+          trampolineNotice.style.color = "#0f0";
+          baselineY = null;
+          highestPointY = null;
+          jumpState = 'on_ground';
+          lastReportedJumpHeight = 0;
+        }
+      } catch (e) { console.error("Calibration error", e); }
+    });
+    restartDrawBtn.addEventListener('click', function () {
+      trampolineClickPoints = [];
+      homography = null;
+      calibrationPhase = "mark_corners";
+      trampolineNotice.textContent = "Click the four corners of the trampoline in the camera view (10x17 ft).";
+      trampolineNotice.style.color = "#0f0";
+      baselineY = null;
+      highestPointY = null;
+      jumpState = 'on_ground';
+      lastReportedJumpHeight = 0;
+    });
+
+    //=========================
+    // CAMERA/ZOOM CONTROLS
+    //=========================
+    switchCameraBtn.addEventListener('click', async () => {
+      useFrontCamera = !useFrontCamera;
+      await startCamera();
+      trampolineClickPoints = [];
+      homography = null;
+      calibrationPhase = "mark_corners";
+      trampolineNotice.textContent = "Camera switched! Mark trampoline corners.";
+      trampolineNotice.style.color = "#0f0";
+      baselineY = null;
+      highestPointY = null;
+      jumpState = 'on_ground';
+      lastReportedJumpHeight = 0;
+    });
+    const resetCalibrationForZoom = () => {
+      trampolineClickPoints = [];
+      homography = null;
+      calibrationPhase = "mark_corners";
+      trampolineNotice.textContent = "Zoom changed! Mark trampoline corners again.";
+      trampolineNotice.style.color = "#0f0";
+      baselineY = null;
+      highestPointY = null;
+      jumpState = 'on_ground';
+      lastReportedJumpHeight = 0;
+    };
+    zoomInBtn.addEventListener('click', async () => {
+      if (!videoTrack || !zoomCapabilities) return;
+      const settings = videoTrack.getSettings();
+      const max = videoTrack.getCapabilities().zoom.max;
+      const step = videoTrack.getCapabilities().zoom.step || 0.1;
+      let newZoom = Math.min((settings.zoom || 1) + step, max);
+      await videoTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
+      resetCalibrationForZoom();
+    });
+    zoomOutBtn.addEventListener('click', async () => {
+      if (!videoTrack || !zoomCapabilities) return;
+      const settings = videoTrack.getSettings();
+      const min = videoTrack.getCapabilities().zoom.min;
+      const step = videoTrack.getCapabilities().zoom.step || 0.1;
+      let newZoom = Math.max((settings.zoom || 1) - step, min);
+      await videoTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
+      resetCalibrationForZoom();
+    });
+
+    //=========================
+    // SETTINGS PANEL
+    //=========================
+    settingsBtn.addEventListener('click', e => {
+      settingsPopover.classList.add('open');
+      settingsPopover.style.display = 'flex';
+      e.stopPropagation();
+    });
+    closeSettingsBtn.addEventListener('click', () => {
+      settingsPopover.classList.remove('open');
+      settingsPopover.style.display = 'none';
+    });
+    document.addEventListener('mousedown', e => {
+      if (settingsPopover.classList.contains('open') && !settingsPopover.contains(e.target) && e.target !== settingsBtn) {
+        settingsPopover.classList.remove('open');
+        settingsPopover.style.display = 'none';
+      }
+    });
+    saveSettingsBtn.addEventListener('click', () => {
+      JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || 0.08;
+      debugMode = debugModeCheckbox.checked;
+      debugValuesDisplay.style.display = debugMode ? "block" : "none";
+      rawHeightDebugDisplay.style.display = debugMode ? "block" : "none";
+      frameRateDisplay.style.display = debugMode ? "block" : "none";
+      settingsPopover.classList.remove('open');
+      settingsPopover.style.display = 'none';
+      trampolineNotice.textContent = "Settings saved!";
+    });
+
+    //=========================
+    // JUMP HEIGHT LOGIC
+    //=========================
+    function getLowestAnkleWorldY(landmarks) {
+      if (!homography) return null;
+      // Use left (27) and right (28) ankle
+      const candidates = [];
+      for (const idx of [27, 28]) {
+        const lm = landmarks[idx];
+        if (lm && typeof lm.x === "number" && typeof lm.y === "number") {
+          const [imgX, imgY] = [lm.x * video.videoWidth, lm.y * video.videoHeight];
+          const [wx, wy] = applyHomography(homography, imgX, imgY);
+          candidates.push(wy);
+        }
+      }
+      if (candidates.length === 0) return null;
+      return Math.max(...candidates); // Y increases downward (mat coordinate)
+    }
+
+    function computeAndSendJump(landmarks) {
+      if (!homography) {
+        widgetJumpHeightDisplay.style.display = "none";
+        return;
+      }
+      // Get lowest ankle Y (in meters, on trampoline plane)
+      const ankleY = getLowestAnkleWorldY(landmarks);
+      if (ankleY === null) {
+        widgetJumpHeightDisplay.style.display = "none";
+        return;
+      }
+      if (baselineY === null) {
+        baselineY = ankleY;
+        highestPointY = ankleY;
+        jumpState = 'on_ground';
+        widgetJumpHeightDisplay.style.display = "block";
+        widgetJumpHeightDisplay.textContent = `Jump: 0.00 m`;
+        return;
+      }
+      // Update highest point during jump
+      if (ankleY < highestPointY) highestPointY = ankleY;
+      const jumpHeight = Math.max(0, baselineY - highestPointY);
+
+      if (debugMode) {
+        rawHeightDebugDisplay.style.display = "block";
+        rawHeightDebugDisplay.textContent = `Raw Jump Height: ${jumpHeight.toFixed(3)}m`;
+        debugValuesDisplay.style.display = "block";
+        debugValuesDisplay.textContent = `Ankle baseline: ${baselineY.toFixed(3)}\nHighest: ${highestPointY.toFixed(3)}\nCurrent: ${ankleY.toFixed(3)}`;
+      }
+
+      if (jumpState === "on_ground" && jumpHeight > JUMP_THRESHOLD) {
+        jumpState = "ascending";
+        jumpStartTime = performance.now();
+      }
+      if (jumpState === "ascending" && jumpHeight < JUMP_THRESHOLD) {
+        jumpState = "on_ground";
+        baselineY = ankleY;
+        highestPointY = ankleY;
+        jumpEndTime = performance.now();
+        lastReportedJumpHeight = jumpHeight;
+      }
+      widgetJumpHeightDisplay.style.display = "block";
+      widgetJumpHeightDisplay.textContent = `Jump: ${jumpHeight.toFixed(2)} m`;
+    }
+
+    //=========================
+    // MASTER LOOP
+    //=========================
+    function masterLoop() {
+      drawLoop();
+      if (
+        lastPoseResult &&
+        lastPoseResult.landmarks &&
+        calibrationPhase === "complete"
+      ) {
+        computeAndSendJump(lastPoseResult.landmarks[0]);
+      }
+      requestAnimationFrame(masterLoop);
+    }
+
+    //=========================
+    // INIT
+    //=========================
+    window.addEventListener('DOMContentLoaded', async () => {
+      await startCamera();
+      await setupPoseLandmarker();
+      calibrationPhase = "mark_corners";
+      trampolineNotice.textContent = "Click the four corners of the trampoline in the camera view (10x17 ft). Calibration will be automatic.";
+      trampolineNotice.style.color = "#0f0";
+      poseLoop();
+      masterLoop();
+    });
   </script>
 </body>
 </html>
