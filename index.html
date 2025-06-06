@@ -138,13 +138,9 @@
         check();
       });
     }
-
-    // [All the rest of your previous JS logic remains unchanged, with all references to poseDetection as window.poseDetection]
-
     // --- CAMERA/VIDEO/POSE/UTILS ---
     const JUMP_THRESHOLD_DEFAULT = 0.08;
     const GRAVITY = 9.81;
-
     let useFrontCamera = false;
     let currentStream = null;
     let videoTrack = null;
@@ -152,7 +148,6 @@
     let detector = null;
     let lastDetections = null;
     let poseLoopActive = false;
-
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
@@ -751,10 +746,10 @@
       resizeCanvasToScreen();
     });
     window.addEventListener('DOMContentLoaded', async () => {
-      await waitForPoseDetection();
       try {
         loadSettingsFromStorage();
         await startCamera();
+        await waitForPoseDetection();
         await setupMoveNet3D();
         drawLoop();
         poseLoop();
