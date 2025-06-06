@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek Multi-Mode Jump Widget (Flight Time Official)</title>
+  <title>JumpTek Multi-Mode Jump Widget (Flight Time Official, No Boundary Restriction)</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -127,9 +127,7 @@
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
   <script>
-    // =========================
-    // HOMOGRAPHY UTILS
-    // =========================
+    // --- HOMOGRAPHY UTILS ---
     function computeHomography(src, dst) {
       function adj(m) {
         return [
@@ -181,22 +179,10 @@
         (H[3]*x + H[4]*y + H[5]) / denom
       ];
     }
-    function pointInQuad(px, py, quad) {
-      function sign(p1, p2, p3) {
-        return (p1[0] - p3[0]) * (p2[1] - p3[1]) - (p2[0] - p3[0]) * (p1[1] - p3[1]);
-      }
-      const b1 = sign([px,py], quad[0], quad[1]) < 0.0;
-      const b2 = sign([px,py], quad[1], quad[2]) < 0.0;
-      const b3 = sign([px,py], quad[2], quad[3]) < 0.0;
-      const b4 = sign([px,py], quad[3], quad[0]) < 0.0;
-      return ((b1 === b2) && (b2 === b3) && (b3 === b4));
-    }
 
-    // =========================
-    // CAMERA/VIDEO/POSE/UTILS
-    // =========================
-    const JUMP_THRESHOLD_DEFAULT = 0.08; // meters
-    const GRAVITY = 9.81; // m/s²
+    // --- CAMERA/VIDEO/POSE/UTILS ---
+    const JUMP_THRESHOLD_DEFAULT = 0.08;
+    const GRAVITY = 9.81;
 
     let useFrontCamera = false;
     let currentStream = null;
@@ -322,11 +308,9 @@
         let rampWid = parseFloat(dminiRampWid.value) || DMINI_RAMP_WIDTH;
         let flatLen = parseFloat(dminiFlatLen.value) || DMINI_FLAT_LENGTH;
         let flatWid = parseFloat(dminiFlatWid.value) || DMINI_FLAT_WIDTH;
-        // Ramp: (0,0) (rampLen,0) (rampLen,rampWid) (0,rampWid)
-        // Flat: (0,0) (flatLen,0) (flatLen,flatWid) (0,flatWid)
         return [
-          [ [0,0], [rampLen,0], [rampLen,rampWid], [0,rampWid] ], // ramp
-          [ [0,0], [flatLen,0], [flatLen,flatWid], [0,flatWid] ] // flat
+          [ [0,0], [rampLen,0], [rampLen,rampWid], [0,rampWid] ],
+          [ [0,0], [flatLen,0], [flatLen,flatWid], [0,flatWid] ]
         ];
       } else if (mode === "custom") {
         let len = getCustomMeters(customLength.value, customLengthUnit.value);
@@ -423,14 +407,17 @@
 
     function getPlaneForAnkle(x, y) {
       if (mode === "doublemini" && planes.length === 2) {
-        if (pointInQuad(x, y, planes[0].imageQuad)) return planes[0];
-        if (pointInQuad(x, y, planes[1].imageQuad)) return planes[1];
-        return (y < (planes[0].imageQuad[2][1] + planes[0].imageQuad[3][1]) / 2) ? planes[0] : planes[1];
+        // Simple: pick based on y coordinate (ramp is first, flat is second)
+        // For calibration, order matters: ramp (front), flat (rear)
+        // We'll use which imageQuad y-range the ankle is closer to.
+        let rampY = (planes[0].imageQuad[2][1] + planes[0].imageQuad[3][1]) / 2;
+        let flatY = (planes[1].imageQuad[2][1] + planes[1].imageQuad[3][1]) / 2;
+        return Math.abs(y - rampY) < Math.abs(y - flatY) ? planes[0] : planes[1];
       }
       return planes[0];
     }
 
-    // --- Main jump calculation logic ---
+    // --- MAIN JUMP CALCULATION LOGIC ---
     function computeAndSendJump(keypoints) {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || JUMP_THRESHOLD_DEFAULT;
       if (calibrationPhase !== 'complete' || baselineY === null || !planes.length) {
@@ -472,7 +459,6 @@
               widgetJumpHeightDisplay.innerHTML = `Jump: 0.00 m`;
               sendJumpHeight(0, true, 'ground');
             } else {
-              // Show official jump height until next jump
               widgetJumpHeightDisplay.innerHTML = `Jump: ${officialJumpHeight.toFixed(2)} m <span class="official-label">(flight time)</span>`;
               sendJumpHeight(officialJumpHeight, true, 'landed');
             }
@@ -602,7 +588,6 @@
         ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
         for (let i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
         ctx.closePath(); ctx.stroke(); ctx.restore();
-        // Draw corner dots
         ctx.save(); ctx.fillStyle = "#0ff";
         for (let i = 0; i < points.length; i++) {
           ctx.beginPath();
@@ -867,7 +852,6 @@
       origUpdateCalibrationUI();
       if (calibrationPhase === "stand_still") setHomographies();
     };
-
   </script>
 </body>
 </html>
