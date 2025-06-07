@@ -43,16 +43,12 @@
     #settingsPopover .close-btn:hover { color: #fff; }
     #saveSettingsBtn { margin-top: 12px; padding: 10px 18px; border-radius: 12px; background: #27ae60; color: #fff; font-size: 1rem; border: none; cursor: pointer; font-weight: bold; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: background 0.2s; align-self: flex-end;}
     #saveSettingsBtn:active, #saveSettingsBtn:focus { background: #219150; }
-    #widgetJumpHeightDisplay { display: none; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
+    #widgetJumpHeightDisplay { display: block; position: absolute; top: 60px; right: 30px; background: rgba(0,0,0,0.75); color: #ff0; padding: 12px 20px; border-radius: 12px; font-size: 1.3rem; z-index: 25; pointer-events: none; font-weight: bold; text-shadow: 1px 1px 5px #000;}
     #rawHeightDebugDisplay, #debugValuesDisplay, #frameRateDisplay { position: absolute; top: 20px; left: 20px; background: rgba(0, 0, 0, 0.7); color: #fff; padding: 8px 15px; border-radius: 12px; font-size: 0.9rem; z-index: 20; pointer-events: none; text-align: left; display: none;}
     #rawHeightDebugDisplay.positive { color: #0f0; }
     #debugValuesDisplay { top: 120px; max-width: 300px; white-space: pre-line; }
     #frameRateDisplay { top: 80px; }
   </style>
-  <!-- TensorFlow.js and pose-detection -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.2.0/dist/pose-detection.min.js"></script>
 </head>
 <body>
   <div id="container">
@@ -79,7 +75,7 @@
       </div>
       <button id="saveSettingsBtn">Save</button>
     </div>
-    <div id="trampolineNotice">Click the four corners of the trampoline in the camera view (10x17 ft). Calibration will be automatic.</div>
+    <div id="trampolineNotice">Click the four corners of the trampoline.</div>
     <div id="loadingIndicator">Loading...</div>
     <div id="widgetJumpHeightDisplay">Jump: 0.00 m</div>
     <div id="rawHeightDebugDisplay">Raw Z-Delta: 0.000m</div>
@@ -91,6 +87,12 @@
     </div>
   </div>
   <video id="video" autoplay playsinline style="display:none;"></video>
+  <!-- External libraries: always load these first! -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.2.0/dist/pose-detection.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
+  <!-- Main script: must come AFTER pose-detection so poseDetection is defined -->
   <script>
     // =========================
     // BlazePose 3D constants
@@ -167,11 +169,9 @@
         Y.push(dst[i][0]);
         Y.push(dst[i][1]);
       }
-      // Using numeric.js would be best, but let's do a simple SVD-free solution for 4 points
       const Xt = math.transpose(X);
       const XtX = math.multiply(Xt, X);
       const XtY = math.multiply(Xt, Y);
-      // Use math.js pseudo-inverse for robustness
       const h = math.multiply(math.pinv(XtX), XtY);
       return [
         [h[0], h[1], h[2]],
@@ -256,7 +256,7 @@
           runtime: 'tfjs',
           enableSmoothing: true,
           modelType: 'full', // full = GHUM 3D
-          detectorModelUrl: undefined, // use CDN
+          detectorModelUrl: undefined,
           enableSegmentation: false
         }
       );
@@ -391,7 +391,7 @@
       trampoline3DPoints = [];
       trampolinePlane = null;
       calibrationPhase = "mark_corners";
-      trampolineNotice.textContent = "Click the four corners of the trampoline in the camera view (10x17 ft).";
+      trampolineNotice.textContent = "Click the four corners of the trampoline.";
       trampolineNotice.style.color = "#0f0";
       baselineDist = null;
       highestDist = null;
@@ -563,13 +563,11 @@
       await startCamera();
       await setupPoseDetector();
       calibrationPhase = "mark_corners";
-      trampolineNotice.textContent = "Click the four corners of the trampoline in the camera view (10x17 ft). Calibration will be automatic.";
+      trampolineNotice.textContent = "Click the four corners of the trampoline.";
       trampolineNotice.style.color = "#0f0";
       poseLoop();
       masterLoop();
     });
   </script>
-  <!-- math.js for pseudo-inverse (used in homography if needed) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
 </body>
 </html>
