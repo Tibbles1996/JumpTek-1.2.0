@@ -49,7 +49,6 @@
     #debugValuesDisplay { top: 120px; max-width: 300px; white-space: pre-line; }
     #frameRateDisplay { top: 80px; }
   </style>
-  <!-- Fix: Add numeric.js for homography SVD support -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js"></script>
   <script type="module">
     import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest";
@@ -159,22 +158,26 @@
     window.addEventListener('resize', resizeCanvasToScreen);
 
     //=========================
-    // HOMOGRAPHY
+    // HOMOGRAPHY (Safe for 4 points)
     //=========================
     function computeHomography(src, dst) {
-      let A = [];
+      // src and dst: arrays of 4 [x, y] pairs
+      // Direct Linear Transform for 4 points using numeric.solve (no SVD needed)
+      const X = [], Y = [];
       for (let i = 0; i < 4; i++) {
-        let [x, y] = src[i], [u, v] = dst[i];
-        A.push([-x, -y, -1, 0, 0, 0, x * u, y * u, u]);
-        A.push([0, 0, 0, -x, -y, -1, x * v, y * v, v]);
+        X.push([src[i][0], src[i][1], 1, 0, 0, 0, -dst[i][0] * src[i][0], -dst[i][0] * src[i][1]]);
+        X.push([0, 0, 0, src[i][0], src[i][1], 1, -dst[i][1] * src[i][0], -dst[i][1] * src[i][1]]);
+        Y.push(dst[i][0]);
+        Y.push(dst[i][1]);
       }
-      let svd = numeric.svd(A);
-      let h = svd.V[8];
-      for (let i = 0; i < h.length; i++) h[i] = h[i] / h[8];
+      const Xt = numeric.transpose(X);
+      const XtX = numeric.dot(Xt, X);
+      const XtY = numeric.dot(Xt, Y);
+      const h = numeric.solve(XtX, XtY); // h has 8 elements, h9 = 1
       return [
         [h[0], h[1], h[2]],
         [h[3], h[4], h[5]],
-        [h[6], h[7], h[8]]
+        [h[6], h[7], 1]
       ];
     }
     function applyHomography(H, x, y) {
@@ -226,7 +229,6 @@
       );
       poseLandmarker = await window.PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
-          // FIX: Use updated model URL (2025)
           modelAssetPath: "https://storage.googleapis.com/mediapipe-assets/pose_landmarker.task"
         },
         runningMode: "VIDEO",
