@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>JumpTek BlazePose GHUM 3D Tracker</title>
+  <title>JumpTek BlazePose GHUM 3D Tracker - Debug Version</title>
   <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
     body { width: 100vw; height: 100vh; background: #222; color: #fff; font-family: Arial, sans-serif; box-sizing: border-box; }
@@ -11,10 +11,9 @@
       position: absolute; top: 0; left: 0;
       width: 100vw; height: 100vh;
       display: block; z-index: 1; background: #000; border: none;
-      pointer-events: none;
     }
     #canvas { z-index: 2; pointer-events: auto; }
-    #video { z-index: 1; opacity: 0; }
+    #video { z-index: 1; opacity: 1 !important; display: block !important; }
     #buttonRow { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 20px; z-index: 20; }
     #switchCameraBtn, #settingsBtn, #zoomInBtn, #zoomOutBtn {
       position: static; margin: 0; padding: 10px 18px; color: #fff;
@@ -86,7 +85,8 @@
       <button id="zoomOutBtn">-</button>
     </div>
   </div>
-  <video id="video" autoplay playsinline style="display:none;"></video>
+  <!-- DEBUG: VIDEO IS ALWAYS VISIBLE -->
+  <video id="video" autoplay playsinline style="width:100vw; height:100vh; background:#111; z-index:1; display:block; opacity:1;"></video>
   <!-- External libraries: always load these first! -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
@@ -159,65 +159,21 @@
     window.addEventListener('resize', resizeCanvasToScreen);
 
     // =========================
-    // HOMOGRAPHY
-    // =========================
-    function computeHomography(src, dst) {
-      const X = [], Y = [];
-      for (let i = 0; i < 4; i++) {
-        X.push([src[i][0], src[i][1], 1, 0, 0, 0, -dst[i][0] * src[i][0], -dst[i][0] * src[i][1]]);
-        X.push([0, 0, 0, src[i][0], src[i][1], 1, -dst[i][1] * src[i][0], -dst[i][1] * src[i][1]]);
-        Y.push(dst[i][0]);
-        Y.push(dst[i][1]);
-      }
-      const Xt = math.transpose(X);
-      const XtX = math.multiply(Xt, X);
-      const XtY = math.multiply(Xt, Y);
-      const h = math.multiply(math.pinv(XtX), XtY);
-      return [
-        [h[0], h[1], h[2]],
-        [h[3], h[4], h[5]],
-        [h[6], h[7], 1]
-      ];
-    }
-    function applyHomography(H, x, y) {
-      const d = H[2][0] * x + H[2][1] * y + H[2][2];
-      const u = (H[0][0] * x + H[0][1] * y + H[0][2]) / d;
-      const v = (H[1][0] * x + H[1][1] * y + H[1][2]) / d;
-      return [u, v];
-    }
-
-    // =========================
-    // 3D PLANE FITTING
-    // =========================
-    function fitPlaneFromPoints(points) {
-      const [p0, p1, p2] = points;
-      const v1 = {x: p1.x - p0.x, y: p1.y - p0.y, z: p1.z - p0.z};
-      const v2 = {x: p2.x - p0.x, y: p2.y - p0.y, z: p2.z - p0.z};
-      const n = {
-        x: v1.y * v2.z - v1.z * v2.y,
-        y: v1.z * v2.x - v1.x * v2.z,
-        z: v1.x * v2.y - v1.y * v2.x
-      };
-      const norm = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
-      if (norm === 0) return null;
-      const normal = {x: n.x / norm, y: n.y / norm, z: n.z / norm};
-      const d = - (normal.x * p0.x + normal.y * p0.y + normal.z * p0.z);
-      return {a: normal.x, b: normal.y, c: normal.z, d};
-    }
-    function pointToPlaneDistance(plane, pt) {
-      return (plane.a * pt.x + plane.b * pt.y + plane.c * pt.z + plane.d) /
-             Math.sqrt(plane.a * plane.a + plane.b * plane.b + plane.c * plane.c);
-    }
-
-    // =========================
-    // CAMERA SETUP
+    // DEBUG LOGGING FOR CAMERA INIT
     // =========================
     async function startCamera() {
       loadingIndicator.style.display = 'block';
+      console.log("[startCamera] called");
       if (currentStream) {
-        try { currentStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+        try { currentStream.getTracks().forEach(t => t.stop()); } catch (e) { console.log("[startCamera] error stopping tracks", e);}
       }
       try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          console.error("[startCamera] getUserMedia not available in this browser.");
+          trampolineNotice.textContent = 'Camera API not available in this browser.';
+          loadingIndicator.style.display = 'none';
+          return;
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -226,9 +182,17 @@
             height: { ideal: 720 }
           }
         });
+        console.log("[startCamera] got stream", stream);
         currentStream = stream;
         video.srcObject = stream;
+
+        // Make video visible for debugging
+        video.style.display = 'block';
+        video.style.opacity = 1;
+
         await video.play();
+        console.log("[startCamera] video.play() resolved");
+
         loadingIndicator.style.display = 'none';
         videoTrack = stream.getVideoTracks()[0];
         zoomCapabilities = videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().zoom;
@@ -238,9 +202,10 @@
       } catch (err) {
         loadingIndicator.style.display = 'none';
         trampolineNotice.textContent = 'Unable to access camera. Please check device settings and HTTPS.';
-        trampolineNotice.style.color = '#f00';
+        trampolineNotice.style.color = "#f00";
         zoomInBtn.disabled = true; zoomOutBtn.disabled = true;
-        throw err;
+        console.error("[startCamera] Camera init error:", err);
+        alert("Camera access failed: " + err.message);
       }
     }
 
@@ -249,11 +214,21 @@
     // =========================
     async function setupPoseDetector() {
       loadingIndicator.style.display = 'block';
+      console.log("[setupPoseDetector] starting tf.setBackend");
       await tf.setBackend('webgl');
       // Wait for the poseDetection global to be available, just in case
-      while (typeof window.poseDetection === "undefined") {
+      let attempts = 0;
+      while (typeof window.poseDetection === "undefined" && attempts < 40) {
         await new Promise(res => setTimeout(res, 50));
+        attempts++;
       }
+      if (typeof window.poseDetection === "undefined") {
+        console.error("[setupPoseDetector] poseDetection never loaded.");
+        loadingIndicator.style.display = 'none';
+        alert("poseDetection failed to load.");
+        return;
+      }
+      console.log("[setupPoseDetector] creating detector");
       detector = await poseDetection.createDetector(
         poseDetection.SupportedModels.BlazePose,
         {
@@ -265,6 +240,7 @@
         }
       );
       loadingIndicator.style.display = 'none';
+      console.log("[setupPoseDetector] detector ready");
     }
 
     // =========================
@@ -561,11 +537,14 @@
     }
 
     // =========================
-    // INIT
+    // INIT WITH LOGGING
     // =========================
     window.addEventListener('DOMContentLoaded', async () => {
+      console.log("[DOMContentLoaded] starting...");
       await startCamera();
+      console.log("[DOMContentLoaded] after startCamera");
       await setupPoseDetector();
+      console.log("[DOMContentLoaded] after setupPoseDetector");
       calibrationPhase = "mark_corners";
       trampolineNotice.textContent = "Click the four corners of the trampoline.";
       trampolineNotice.style.color = "#0f0";
