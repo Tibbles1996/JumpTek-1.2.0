@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BlazePose TFJS Fix</title>
+  <title>MoveNet 3D Demo</title>
   <style>
     html, body { margin:0; padding:0; width:100vw; height:100vh; background:#111; }
     #container { position:relative; width:100vw; height:100vh; overflow:hidden; }
@@ -21,10 +21,10 @@
     <canvas id="canvas"></canvas>
     <div id="status">Loading...</div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.19.0/dist/tf-converter.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script>
     const statusDiv = document.getElementById('status');
     const video = document.getElementById('video');
@@ -34,17 +34,17 @@
 
     function drawPose(pose) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!pose || !pose.keypoints) return;
+      if (!pose || !pose.keypoints3D) return;
       ctx.save();
       ctx.lineWidth = 3;
       ctx.strokeStyle = "#0ff";
       ctx.fillStyle = "#ff0";
-      for (const kp of pose.keypoints) {
+      for (const kp of pose.keypoints3D) {
         if (kp.score > 0.01 && kp.x && kp.y) {
           ctx.beginPath();
           ctx.arc(
-            kp.x * (canvas.width / video.videoWidth),
-            kp.y * (canvas.height / video.videoHeight),
+            kp.x * canvas.width, // MoveNet 3D gives normalized coordinates (0..1)
+            kp.y * canvas.height,
             6, 0, 2 * Math.PI
           );
           ctx.fill();
@@ -74,8 +74,12 @@
       await tf.setBackend('webgl');
       await tf.ready();
       detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.BlazePose,
-        {runtime: 'tfjs', modelType: 'full'}
+        poseDetection.SupportedModels.MoveNet,
+        {
+          modelType: 'multipose_lightning', // multipose_lightning supports keypoints3D
+          enableTracking: true,
+          enableSmoothing: true
+        }
       );
       statusDiv.textContent = "Model loaded! Move in front of camera.";
 
@@ -87,10 +91,10 @@
         }
 
         const poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: false});
-        console.log('Poses:', poses);
-        if (poses.length > 0 && poses[0].keypoints.some(kp => kp.score > 0.01 && kp.x && kp.y)) {
+        // keypoints3D is supported on multipose_lightning and multipose_thunder
+        if (poses.length > 0 && poses[0].keypoints3D && poses[0].keypoints3D.some(kp => kp.score > 0.01 && kp.x && kp.y)) {
           drawPose(poses[0]);
-          statusDiv.textContent = "Pose detected!";
+          statusDiv.textContent = "3D Pose detected!";
         } else {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           statusDiv.textContent = "No pose detected.";
