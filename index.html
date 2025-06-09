@@ -11,17 +11,21 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.19.0/dist/tf-converter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection/dist/pose-detection.min.js"></script>
   <script>
+    alert('JS loaded!');
     window.addEventListener('DOMContentLoaded', async () => {
+      alert('DOMContentLoaded!');
       try {
         console.log("window.poseDetection:", window.poseDetection);
         await tf.setBackend('webgl');
-        console.log("Backend set");
+        alert('Backend set!');
         const detector = await poseDetection.createDetector(
           poseDetection.SupportedModels.BlazePose,
           {runtime: 'tfjs', modelType: 'full'}
         );
+        alert('Detector created!');
         console.log("Detector created:", detector);
       } catch (e) {
+        alert('BlazePose init error: ' + e);
         console.error("BlazePose init error:", e);
       }
     });
