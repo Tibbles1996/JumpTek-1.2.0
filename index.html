@@ -86,20 +86,16 @@
     </div>
   </div>
   <video id="video" autoplay playsinline style="width:100vw; height:100vh; background:#111; z-index:1; display:block; opacity:1;"></video>
-  <!-- External libraries: always load these first! -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.19.0/dist/tf-converter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection/dist/pose-detection.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
   <script>
-    // =========================
     // BlazePose 3D constants
-    // =========================
     const BLAZEPOSE_ANKLE_L = 27, BLAZEPOSE_ANKLE_R = 28;
 
-    // =========================
     // STATE, CONSTANTS, DOM
-    // =========================
     let JUMP_THRESHOLD = 0.08;
     let useFrontCamera = false;
     let currentStream = null;
@@ -149,7 +145,6 @@
     const restartDrawBtn = document.getElementById('restartDrawBtn');
     const widgetJumpHeightDisplay = document.getElementById('widgetJumpHeightDisplay');
     const loadingIndicator = document.getElementById('loadingIndicator');
-
     function resizeCanvasToScreen() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
@@ -487,14 +482,12 @@
       }
       if (dist > highestDist) highestDist = dist;
       const jumpHeight = Math.max(0, highestDist - baselineDist);
-
       if (debugMode) {
         rawHeightDebugDisplay.style.display = "block";
         rawHeightDebugDisplay.textContent = `Raw Jump Height: ${jumpHeight.toFixed(3)}m`;
         debugValuesDisplay.style.display = "block";
         debugValuesDisplay.textContent = `Ankle baseline: ${baselineDist.toFixed(3)}\nHighest: ${highestDist.toFixed(3)}\nCurrent: ${dist.toFixed(3)}`;
       }
-
       if (jumpState === "on_ground" && jumpHeight > JUMP_THRESHOLD) {
         jumpState = "ascending";
         jumpStartTime = performance.now();
