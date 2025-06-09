@@ -2,74 +2,109 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>MoveNet 3D Minimal Demo</title>
+  <title>MoveNet 3D Demo (Fixed)</title>
   <style>
-    body, html { margin: 0; padding: 0; }
-    #video, #canvas { position: absolute; top: 0; left: 0; }
-    #status { position: absolute; top: 10px; left: 10px; color: #fff; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 8px; }
+    html, body { margin:0; padding:0; width:100vw; height:100vh; background:#111; }
+    #container { position:relative; width:100vw; height:100vh; overflow:hidden; }
+    #video, #canvas {
+      position:absolute; top:0; left:0; width:100vw; height:100vh; object-fit:cover;
+    }
+    #canvas { z-index:2; pointer-events:none; background:transparent !important; }
+    #video { z-index:1; }
+    #status { position:absolute; top:10px; left:10px; z-index:10; 
+      color:#fff; background:rgba(0,0,0,0.5); padding:4px 12px; border-radius:8px; }
   </style>
 </head>
 <body>
-  <video id="video" width="640" height="480" autoplay playsinline></video>
-  <canvas id="canvas" width="640" height="480"></canvas>
-  <div id="status">Loading...</div>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div id="status">Loading...</div>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script>
+    // DOM elements
     const statusDiv = document.getElementById('status');
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    let detector = null;
 
-    async function main() {
-      statusDiv.textContent = "Requesting camera...";
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      await new Promise(res => video.onloadedmetadata = res);
-
-      statusDiv.textContent = "Loading model...";
-      await tf.setBackend('webgl');
-      await tf.ready();
-      const detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
-        { modelType: 'MultiPose.Lightning' }
-      );
-      statusDiv.textContent = "Model loaded! Move in front of camera.";
-
-      function drawPose(pose) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (!pose || !pose.keypoints3D) return;
-        for (const kp of pose.keypoints3D) {
-          if (kp && kp.score > 0.01 && kp.x != null && kp.y != null) {
-            ctx.beginPath();
-            ctx.arc(kp.x * canvas.width, kp.y * canvas.height, 6, 0, 2 * Math.PI);
-            ctx.fillStyle = "#ff0";
-            ctx.fill();
-          }
+    // Draw 3D keypoints
+    function drawPose(pose) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!pose || !pose.keypoints3D) return;
+      for (const kp of pose.keypoints3D) {
+        if (kp && kp.score > 0.1 && kp.x != null && kp.y != null) {
+          ctx.beginPath();
+          ctx.arc(kp.x * canvas.width, kp.y * canvas.height, 6, 0, 2 * Math.PI);
+          ctx.fillStyle = "#ff0";
+          ctx.fill();
         }
       }
-
-      async function detectLoop() {
-        const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
-        console.log(poses);
-        if (poses.length > 0 && poses[0].keypoints3D && poses[0].keypoints3D.some(kp => kp.score > 0.01)) {
-          drawPose(poses[0]);
-          statusDiv.textContent = "3D Pose detected!";
-        } else {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          statusDiv.textContent = "No pose detected.";
-        }
-        requestAnimationFrame(detectLoop);
-      }
-      detectLoop();
     }
 
-    main().catch(e => {
-      statusDiv.textContent = "Error: " + e;
-      console.error(e);
-    });
+    // Ensure canvas always matches video size
+    function resizeCanvas() {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      if (w && h) {
+        canvas.width = w;
+        canvas.height = h;
+        video.width = w;
+        video.height = h;
+      }
+    }
+
+    async function main() {
+      try {
+        statusDiv.textContent = "Requesting camera...";
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user", width: 640, height: 480 } });
+        video.srcObject = stream;
+        await new Promise(res => video.onloadedmetadata = res);
+        resizeCanvas();
+
+        window.addEventListener('resize', resizeCanvas);
+        video.addEventListener('loadedmetadata', resizeCanvas);
+
+        statusDiv.textContent = "Loading model...";
+        await tf.setBackend('webgl');
+        await tf.ready();
+        detector = await poseDetection.createDetector(
+          poseDetection.SupportedModels.MoveNet,
+          { modelType: 'MultiPose.Lightning' }
+        );
+        statusDiv.textContent = "Model loaded! Move in front of camera.";
+
+        // Main detection loop
+        async function detectLoop() {
+          if (video.readyState < 2) {
+            requestAnimationFrame(detectLoop);
+            return;
+          }
+          resizeCanvas();
+
+          const poses = await detector.estimatePoses(video, { maxPoses: 1, flipHorizontal: false });
+          if (poses.length > 0 && poses[0].keypoints3D && poses[0].keypoints3D.some(kp => kp && kp.score > 0.1)) {
+            drawPose(poses[0]);
+            statusDiv.textContent = "3D Pose detected!";
+          } else {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            statusDiv.textContent = "No pose detected.";
+          }
+          requestAnimationFrame(detectLoop);
+        }
+        detectLoop();
+      } catch (e) {
+        statusDiv.textContent = "Error: " + e;
+        console.error(e);
+      }
+    }
+
+    main();
   </script>
 </body>
 </html>
