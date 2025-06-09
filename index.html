@@ -40,7 +40,7 @@
       ctx.strokeStyle = "#0ff";
       ctx.fillStyle = "#ff0";
       for (const kp of pose.keypoints) {
-        if (kp.score > 0.01) {
+        if (kp.score > 0.01 && kp.x && kp.y) {
           ctx.beginPath();
           ctx.arc(
             kp.x * (canvas.width / video.videoWidth),
@@ -79,8 +79,6 @@
       );
       statusDiv.textContent = "Model loaded! Move in front of camera.";
 
-      let flip = false;
-
       async function detectLoop() {
         if (video.readyState < 2) return requestAnimationFrame(detectLoop);
 
@@ -88,9 +86,9 @@
           resizeCanvas();
         }
 
-        const poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: flip});
+        const poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: false});
         console.log('Poses:', poses);
-        if (poses.length > 0 && poses[0].keypoints.some(kp => kp.score > 0.01)) {
+        if (poses.length > 0 && poses[0].keypoints.some(kp => kp.score > 0.01 && kp.x && kp.y)) {
           drawPose(poses[0]);
           statusDiv.textContent = "Pose detected!";
         } else {
