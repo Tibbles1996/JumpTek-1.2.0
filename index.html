@@ -1,33 +1,111 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BlazePose Init Debug</title>
+  <title>BlazePose Live Demo</title>
+  <style>
+    body { margin: 0; background: #111; color: #fff; }
+    #container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+    #video, #canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      object-fit: cover; background: #111;
+    }
+    #canvas { pointer-events: none; z-index: 2; }
+    #video  { z-index: 1; }
+    #status { position: absolute; top: 10px; left: 10px; z-index: 99; color: #fff; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 8px; font-size: 1rem; }
+  </style>
 </head>
 <body>
-  <h1>BlazePose Init Debug</h1>
+  <div id="container">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <div id="status">Loading...</div>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@4.19.0/dist/tf-converter.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection/dist/pose-detection.min.js"></script>
   <script>
-    alert('JS loaded!');
-    window.addEventListener('DOMContentLoaded', async () => {
-      alert('DOMContentLoaded!');
-      try {
-        console.log("window.poseDetection:", window.poseDetection);
-        await tf.setBackend('webgl');
-        alert('Backend set!');
-        const detector = await poseDetection.createDetector(
-          poseDetection.SupportedModels.BlazePose,
-          {runtime: 'tfjs', modelType: 'full'}
-        );
-        alert('Detector created!');
-        console.log("Detector created:", detector);
-      } catch (e) {
-        alert('BlazePose init error: ' + e);
-        console.error("BlazePose init error:", e);
+    const statusDiv = document.getElementById('status');
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let detector = null;
+
+    // Utility to draw keypoints and skeleton
+    function drawPose(pose) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!pose || !pose.keypoints) return;
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#0ff";
+      ctx.fillStyle = "#ff0";
+      // Draw keypoints
+      for (const kp of pose.keypoints) {
+        if (kp.score > 0.3) {
+          ctx.beginPath();
+          ctx.arc(kp.x * canvas.width / video.videoWidth, kp.y * canvas.height / video.videoHeight, 6, 0, 2 * Math.PI);
+          ctx.fill();
+        }
       }
+      // Draw skeleton
+      const pairs = [
+        [11,13],[13,15],[12,14],[14,16], // arms
+        [11,12],[12,24],[24,26],[26,28],[23,24],[23,25],[25,27],[27,29], // torso/legs
+        [5,6],[6,8],[5,7],[7,9] // head/arms
+      ];
+      ctx.strokeStyle = "#0ff";
+      for (const [a,b] of pairs) {
+        if (pose.keypoints[a] && pose.keypoints[b] && pose.keypoints[a].score > 0.3 && pose.keypoints[b].score > 0.3) {
+          ctx.beginPath();
+          ctx.moveTo(pose.keypoints[a].x * canvas.width / video.videoWidth, pose.keypoints[a].y * canvas.height / video.videoHeight);
+          ctx.lineTo(pose.keypoints[b].x * canvas.width / video.videoWidth, pose.keypoints[b].y * canvas.height / video.videoHeight);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    async function main() {
+      // Set up camera
+      statusDiv.textContent = "Requesting camera...";
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      statusDiv.textContent = "Loading model...";
+      // Set up canvas
+      function resize() {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      video.addEventListener('loadedmetadata', resize);
+      window.addEventListener('resize', resize);
+
+      await tf.setBackend('webgl');
+      detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.BlazePose,
+        {runtime: 'tfjs', modelType: 'full'}
+      );
+      statusDiv.textContent = "Model loaded! Move in front of camera.";
+
+      // Main loop
+      async function detectLoop() {
+        if (video.readyState < 2) return requestAnimationFrame(detectLoop);
+        const poses = await detector.estimatePoses(video, {maxPoses: 1});
+        if (poses && poses.length > 0) drawPose(poses[0]);
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+        requestAnimationFrame(detectLoop);
+      }
+      detectLoop();
+    }
+
+    main().catch(e => {
+      statusDiv.textContent = "Error: " + e;
+      console.error(e);
     });
   </script>
 </body>
