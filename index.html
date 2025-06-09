@@ -76,7 +76,7 @@
       detector = await poseDetection.createDetector(
         poseDetection.SupportedModels.MoveNet,
         {
-          modelType: 'multipose_lightning', // multipose_lightning supports keypoints3D
+          modelType: 'MultiPose.Lightning', // Correct modelType
           enableTracking: true,
           enableSmoothing: true
         }
@@ -91,7 +91,6 @@
         }
 
         const poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: false});
-        // keypoints3D is supported on multipose_lightning and multipose_thunder
         if (poses.length > 0 && poses[0].keypoints3D && poses[0].keypoints3D.some(kp => kp.score > 0.01 && kp.x && kp.y)) {
           drawPose(poses[0]);
           statusDiv.textContent = "3D Pose detected!";
