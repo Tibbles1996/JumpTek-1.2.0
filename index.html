@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BlazePose Debug</title>
+  <title>BlazePose Debug FINAL</title>
   <style>
     html, body { margin:0; padding:0; width:100vw; height:100vh; background:#111; }
     #container { position:relative; width:100vw; height:100vh; overflow:hidden; }
@@ -39,9 +39,8 @@
       ctx.lineWidth = 3;
       ctx.strokeStyle = "#0ff";
       ctx.fillStyle = "#ff0";
-      // Draw keypoints (lowered threshold)
       for (const kp of pose.keypoints) {
-        if (kp.score > 0.1) {
+        if (kp.score > 0.01) {
           ctx.beginPath();
           ctx.arc(
             kp.x * (canvas.width / video.videoWidth),
@@ -51,14 +50,16 @@
           ctx.fill();
         }
       }
-      // Draw skeleton
+      // Skeleton
       const pairs = [
-        [11,13],[13,15],[12,14],[14,16],[11,12],[12,24],[24,26],[26,28],[23,24],[23,25],[25,27],[27,29],[5,6],[6,8],[5,7],[7,9]
+        [11,13],[13,15],[12,14],[14,16],
+        [11,12],[12,24],[24,26],[26,28],[23,24],[23,25],[25,27],[27,29],
+        [5,6],[6,8],[5,7],[7,9]
       ];
       ctx.strokeStyle = "#0ff";
       for (const [a,b] of pairs) {
         if (pose.keypoints[a] && pose.keypoints[b] &&
-            pose.keypoints[a].score > 0.1 && pose.keypoints[b].score > 0.1) {
+            pose.keypoints[a].score > 0.01 && pose.keypoints[b].score > 0.01) {
           ctx.beginPath();
           ctx.moveTo(
             pose.keypoints[a].x * (canvas.width / video.videoWidth),
@@ -99,6 +100,8 @@
       );
       statusDiv.textContent = "Model loaded! Move in front of camera.";
 
+      let flip = false; // Try 'true' if 'false' doesn't work
+
       async function detectLoop() {
         if (video.readyState < 2) return requestAnimationFrame(detectLoop);
 
@@ -106,10 +109,13 @@
           resizeCanvas();
         }
 
-        const poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: true});
-        console.log(poses);
+        const poses = await detector.estimatePoses(video, {maxPoses: 1, flipHorizontal: flip});
+        console.log('Poses:', poses);
+        if (poses.length > 0) {
+          console.log('First keypoints:', poses[0].keypoints);
+        }
 
-        if (poses && poses.length > 0 && poses[0].keypoints.some(kp => kp.score > 0.1)) {
+        if (poses && poses.length > 0 && poses[0].keypoints.some(kp => kp.score > 0.01)) {
           drawPose(poses[0]);
           statusDiv.textContent = "Pose detected!";
         } else {
