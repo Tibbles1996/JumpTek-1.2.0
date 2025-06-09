@@ -2,18 +2,57 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>BlazePose Live Demo</title>
+  <title>BlazePose Live Demo (Video Overlay Fix)</title>
   <style>
-    body { margin: 0; background: #111; color: #fff; }
-    #container { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
-    #video, #canvas {
-      position: absolute; top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      object-fit: cover; background: #111;
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #111;
+      overflow: hidden;
     }
-    #canvas { pointer-events: none; z-index: 2; }
-    #video  { z-index: 1; }
-    #status { position: absolute; top: 10px; left: 10px; z-index: 99; color: #fff; background: rgba(0,0,0,0.5); padding: 4px 12px; border-radius: 8px; font-size: 1rem; }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #111;
+    }
+    #video, #canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      background: transparent !important;
+      max-width: 100vw;
+      max-height: 100vh;
+      pointer-events: none;
+    }
+    #video {
+      z-index: 1;
+      display: block;
+      pointer-events: none;
+    }
+    #canvas {
+      z-index: 2;
+      pointer-events: none;
+      background: transparent !important;
+    }
+    #status {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      color: #fff;
+      background: rgba(0,0,0,0.5);
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: 1rem;
+      pointer-events: none;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
@@ -45,22 +84,37 @@
       for (const kp of pose.keypoints) {
         if (kp.score > 0.3) {
           ctx.beginPath();
-          ctx.arc(kp.x * canvas.width / video.videoWidth, kp.y * canvas.height / video.videoHeight, 6, 0, 2 * Math.PI);
+          ctx.arc(
+            kp.x * (canvas.width / video.videoWidth),
+            kp.y * (canvas.height / video.videoHeight),
+            6, 0, 2 * Math.PI
+          );
           ctx.fill();
         }
       }
-      // Draw skeleton
+      // Draw skeleton (BlazePose 33-point pairs)
       const pairs = [
-        [11,13],[13,15],[12,14],[14,16], // arms
-        [11,12],[12,24],[24,26],[26,28],[23,24],[23,25],[25,27],[27,29], // torso/legs
-        [5,6],[6,8],[5,7],[7,9] // head/arms
+        // arms
+        [11,13],[13,15],[12,14],[14,16],
+        // torso/legs
+        [11,12],[12,24],[24,26],[26,28],[23,24],[23,25],[25,27],[27,29],
+        // head/arms
+        [5,6],[6,8],[5,7],[7,9],
+        // add more pairs for full BlazePose if needed
       ];
       ctx.strokeStyle = "#0ff";
       for (const [a,b] of pairs) {
-        if (pose.keypoints[a] && pose.keypoints[b] && pose.keypoints[a].score > 0.3 && pose.keypoints[b].score > 0.3) {
+        if (pose.keypoints[a] && pose.keypoints[b] &&
+            pose.keypoints[a].score > 0.3 && pose.keypoints[b].score > 0.3) {
           ctx.beginPath();
-          ctx.moveTo(pose.keypoints[a].x * canvas.width / video.videoWidth, pose.keypoints[a].y * canvas.height / video.videoHeight);
-          ctx.lineTo(pose.keypoints[b].x * canvas.width / video.videoWidth, pose.keypoints[b].y * canvas.height / video.videoHeight);
+          ctx.moveTo(
+            pose.keypoints[a].x * (canvas.width / video.videoWidth),
+            pose.keypoints[a].y * (canvas.height / video.videoHeight)
+          );
+          ctx.lineTo(
+            pose.keypoints[b].x * (canvas.width / video.videoWidth),
+            pose.keypoints[b].y * (canvas.height / video.videoHeight)
+          );
           ctx.stroke();
         }
       }
@@ -75,16 +129,18 @@
         audio: false
       });
       video.srcObject = stream;
-      await video.play();
-      statusDiv.textContent = "Loading model...";
-      // Set up canvas
-      function resize() {
+      await new Promise(res => video.onloadedmetadata = res);
+
+      // Resize canvas to match video
+      function resizeCanvas() {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
       }
-      video.addEventListener('loadedmetadata', resize);
-      window.addEventListener('resize', resize);
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      video.addEventListener('loadedmetadata', resizeCanvas);
 
+      statusDiv.textContent = "Loading model...";
       await tf.setBackend('webgl');
       detector = await poseDetection.createDetector(
         poseDetection.SupportedModels.BlazePose,
@@ -94,10 +150,20 @@
 
       // Main loop
       async function detectLoop() {
-        if (video.readyState < 2) return requestAnimationFrame(detectLoop);
+        if (video.readyState < 2) {
+          requestAnimationFrame(detectLoop);
+          return;
+        }
+        // Resize canvas if video changes (dynamic webcam size)
+        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+          resizeCanvas();
+        }
         const poses = await detector.estimatePoses(video, {maxPoses: 1});
-        if (poses && poses.length > 0) drawPose(poses[0]);
-        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (poses && poses.length > 0) {
+          drawPose(poses[0]);
+        } else {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
         requestAnimationFrame(detectLoop);
       }
       detectLoop();
