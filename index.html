@@ -85,14 +85,12 @@
       <button id="zoomOutBtn">-</button>
     </div>
   </div>
-  <!-- DEBUG: VIDEO IS ALWAYS VISIBLE -->
   <video id="video" autoplay playsinline style="width:100vw; height:100vh; background:#111; z-index:1; display:block; opacity:1;"></video>
   <!-- External libraries: always load these first! -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.19.0/dist/tf-core.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.19.0/dist/tf-backend-webgl.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection@4.2.0/dist/pose-detection.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection/dist/pose-detection.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.min.js"></script>
-  <!-- Main script: must come LAST so poseDetection is defined -->
   <script>
     // =========================
     // BlazePose 3D constants
@@ -158,9 +156,6 @@
     }
     window.addEventListener('resize', resizeCanvasToScreen);
 
-    // =========================
-    // DEBUG LOGGING FOR CAMERA INIT
-    // =========================
     async function startCamera() {
       loadingIndicator.style.display = 'block';
       console.log("[startCamera] called");
@@ -185,14 +180,10 @@
         console.log("[startCamera] got stream", stream);
         currentStream = stream;
         video.srcObject = stream;
-
-        // Make video visible for debugging
         video.style.display = 'block';
         video.style.opacity = 1;
-
         await video.play();
         console.log("[startCamera] video.play() resolved");
-
         loadingIndicator.style.display = 'none';
         videoTrack = stream.getVideoTracks()[0];
         zoomCapabilities = videoTrack && videoTrack.getCapabilities && videoTrack.getCapabilities().zoom;
@@ -209,14 +200,10 @@
       }
     }
 
-    // =========================
-    // BlazePose GHUM 3D DETECTOR SETUP
-    // =========================
     async function setupPoseDetector() {
       loadingIndicator.style.display = 'block';
       console.log("[setupPoseDetector] starting tf.setBackend");
       await tf.setBackend('webgl');
-      // Wait for the poseDetection global to be available, just in case
       let attempts = 0;
       while (typeof window.poseDetection === "undefined" && attempts < 40) {
         await new Promise(res => setTimeout(res, 50));
@@ -234,7 +221,7 @@
         {
           runtime: 'tfjs',
           enableSmoothing: true,
-          modelType: 'full', // full = GHUM 3D
+          modelType: 'full',
           detectorModelUrl: undefined,
           enableSegmentation: false
         }
@@ -243,9 +230,6 @@
       console.log("[setupPoseDetector] detector ready");
     }
 
-    // =========================
-    // DRAWING
-    // =========================
     function drawTrampolineArea(ctx, points, color = '#00f') {
       if (!Array.isArray(points) || points.length < 1) return;
       ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 3;
@@ -271,14 +255,12 @@
           0, 0, canvas.width, canvas.height
         );
       }
-      // Draw calibration corners
       if (trampolineClickPoints.length > 0) {
         drawTrampolineArea(ctx, trampolineClickPoints.map(([x, y]) => [
           x * (canvas.width / video.videoWidth),
           y * (canvas.height / video.videoHeight)
         ]), "#00f");
       }
-      // Draw pose landmarks and mapped ankles
       if (lastPoseResult && lastPoseResult.keypoints && lastPoseResult.keypoints.length > 0) {
         const lm = lastPoseResult.keypoints;
         ctx.save();
@@ -290,7 +272,6 @@
         }
         ctx.restore();
       }
-      // FPS
       frameCount++;
       const now = performance.now();
       if (!lastFpsUpdateTime || now - lastFpsUpdateTime >= 500) {
@@ -303,9 +284,6 @@
       requestAnimationFrame(drawLoop);
     }
 
-    // =========================
-    // POSE INFERENCE LOOP
-    // =========================
     async function poseLoop() {
       if (!detector) return;
       async function loop() {
@@ -320,9 +298,6 @@
       loop();
     }
 
-    // =========================
-    // CALIBRATION EVENTS (3D plane fit)
-    // =========================
     canvas.addEventListener('click', function (e) {
       try {
         if (calibrationPhase !== "mark_corners") return;
@@ -334,7 +309,6 @@
         const x = (e.clientX - rect.left) * (video.videoWidth / rect.width);
         const y = (e.clientY - rect.top) * (video.videoHeight / rect.height);
         trampolineClickPoints.push([x, y]);
-        // Find the nearest world landmark to the click in 2D image space
         const lm = lastPoseResult.keypoints;
         const worldLm = lastPoseResult.keypoints3D;
         let minDist = Infinity, minIdx = -1;
@@ -352,8 +326,6 @@
           });
         }
         if (trampolineClickPoints.length === 4) {
-          // Optional: use homography for 2D/3D mapping; not needed for 3D jump height
-          // homography = computeHomography(trampolineClickPoints, trampolineCornersWorld);
           trampolinePlane = fitPlaneFromPoints(trampoline3DPoints);
           calibrationPhase = "complete";
           trampolineNotice.textContent = "Calibration complete! All jump heights and positions are now in meters.";
@@ -365,6 +337,7 @@
         }
       } catch (e) { console.error("Calibration error", e); }
     });
+
     restartDrawBtn.addEventListener('click', function () {
       trampolineClickPoints = [];
       homography = null;
@@ -379,9 +352,6 @@
       lastReportedJumpHeight = 0;
     });
 
-    // =========================
-    // CAMERA/ZOOM CONTROLS
-    // =========================
     switchCameraBtn.addEventListener('click', async () => {
       useFrontCamera = !useFrontCamera;
       await startCamera();
@@ -397,6 +367,7 @@
       jumpState = 'on_ground';
       lastReportedJumpHeight = 0;
     });
+
     const resetCalibrationForZoom = () => {
       trampolineClickPoints = [];
       homography = null;
@@ -410,6 +381,7 @@
       jumpState = 'on_ground';
       lastReportedJumpHeight = 0;
     };
+
     zoomInBtn.addEventListener('click', async () => {
       if (!videoTrack || !zoomCapabilities) return;
       const settings = videoTrack.getSettings();
@@ -419,6 +391,7 @@
       await videoTrack.applyConstraints({ advanced: [{ zoom: newZoom }] });
       resetCalibrationForZoom();
     });
+
     zoomOutBtn.addEventListener('click', async () => {
       if (!videoTrack || !zoomCapabilities) return;
       const settings = videoTrack.getSettings();
@@ -429,24 +402,24 @@
       resetCalibrationForZoom();
     });
 
-    // =========================
-    // SETTINGS PANEL
-    // =========================
     settingsBtn.addEventListener('click', e => {
       settingsPopover.classList.add('open');
       settingsPopover.style.display = 'flex';
       e.stopPropagation();
     });
+
     closeSettingsBtn.addEventListener('click', () => {
       settingsPopover.classList.remove('open');
       settingsPopover.style.display = 'none';
     });
+
     document.addEventListener('mousedown', e => {
       if (settingsPopover.classList.contains('open') && !settingsPopover.contains(e.target) && e.target !== settingsBtn) {
         settingsPopover.classList.remove('open');
         settingsPopover.style.display = 'none';
       }
     });
+
     saveSettingsBtn.addEventListener('click', () => {
       JUMP_THRESHOLD = parseFloat(jumpThresholdInput.value) || 0.08;
       debugMode = debugModeCheckbox.checked;
@@ -458,9 +431,27 @@
       trampolineNotice.textContent = "Settings saved!";
     });
 
-    // =========================
-    // JUMP HEIGHT LOGIC (3D)
-    // =========================
+    function fitPlaneFromPoints(points) {
+      const [p0, p1, p2] = points;
+      const v1 = {x: p1.x - p0.x, y: p1.y - p0.y, z: p1.z - p0.z};
+      const v2 = {x: p2.x - p0.x, y: p2.y - p0.y, z: p2.z - p0.z};
+      const n = {
+        x: v1.y * v2.z - v1.z * v2.y,
+        y: v1.z * v2.x - v1.x * v2.z,
+        z: v1.x * v2.y - v1.y * v2.x
+      };
+      const norm = Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+      if (norm === 0) return null;
+      const normal = {x: n.x / norm, y: n.y / norm, z: n.z / norm};
+      const d = - (normal.x * p0.x + normal.y * p0.y + normal.z * p0.z);
+      return {a: normal.x, b: normal.y, c: normal.z, d};
+    }
+
+    function pointToPlaneDistance(plane, pt) {
+      return (plane.a * pt.x + plane.b * pt.y + plane.c * pt.z + plane.d) /
+             Math.sqrt(plane.a * plane.a + plane.b * plane.b + plane.c * plane.c);
+    }
+
     function getLowestAnkleWorld(keypoints3D) {
       if (!Array.isArray(keypoints3D) || keypoints3D.length < 29) return null;
       let best = null;
@@ -474,6 +465,7 @@
       }
       return best;
     }
+
     function computeAndSendJump3D(keypoints, keypoints3D) {
       if (!trampolinePlane) {
         widgetJumpHeightDisplay.style.display = "none";
@@ -484,7 +476,6 @@
         widgetJumpHeightDisplay.style.display = "none";
         return;
       }
-      // Distance from ankle to trampoline plane (signed, in meters)
       const dist = pointToPlaneDistance(trampolinePlane, ankleWorld);
       if (baselineDist === null) {
         baselineDist = dist;
@@ -494,7 +485,6 @@
         widgetJumpHeightDisplay.textContent = `Jump: 0.00 m`;
         return;
       }
-      // Update highest point during jump
       if (dist > highestDist) highestDist = dist;
       const jumpHeight = Math.max(0, highestDist - baselineDist);
 
@@ -520,9 +510,6 @@
       widgetJumpHeightDisplay.textContent = `Jump: ${jumpHeight.toFixed(2)} m`;
     }
 
-    // =========================
-    // MASTER LOOP
-    // =========================
     function masterLoop() {
       drawLoop();
       if (
@@ -536,9 +523,6 @@
       requestAnimationFrame(masterLoop);
     }
 
-    // =========================
-    // INIT WITH LOGGING
-    // =========================
     window.addEventListener('DOMContentLoaded', async () => {
       console.log("[DOMContentLoaded] starting...");
       await startCamera();
